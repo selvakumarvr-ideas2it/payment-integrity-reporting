@@ -1,0 +1,21 @@
+# Local Postgres for the POC.  npm run db:up  /  npm run db:down
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pi-reporting-postgres
+    environment:
+      POSTGRES_USER: pi
+      POSTGRES_PASSWORD: pi
+      POSTGRES_DB: pi
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pi-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pi -d pi"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pi-pgdata:
