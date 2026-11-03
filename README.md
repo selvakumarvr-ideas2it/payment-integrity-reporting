@@ -11,6 +11,8 @@ Node Function API ──▶ Postgres stored procedure bi_engine.execute_query(us
 
 See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the step-by-step workflow and [docs/flow-diagram.png](docs/flow-diagram.png) for the flow diagram.
 
+**Moving the BI Engine to Snowflake:** the target design (database `PI`, schemas `CORE` and `BI_ENGINE`), build steps and scripts are in [docs/BI_ENGINE_SNOWFLAKE.md](docs/BI_ENGINE_SNOWFLAKE.md) and [`snowflake/`](snowflake/). The Postgres engine above remains the working local POC until the Function API is switched over.
+
 - **Pages:** Sign in → Home → Explore → Savings Invoice (same Home / Explore / report pattern as HPM)
 - **Report:** multi-select Market and Program Type filters, saved **datasets**, three KPI tiles, a sortable month table with a totals row, and CSV export
 - **Datasets:** a named set of filter values (e.g. `Arizona-CPI` = Market AZ + Program CPI) saved per user, so users pick one instead of setting each filter

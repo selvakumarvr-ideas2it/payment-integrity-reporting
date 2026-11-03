@@ -12,6 +12,7 @@ const OUT = join(here, '..', 'public', 'data');
 const SEED = Number(process.argv[2] || 20261028);
 const END_MONTH = '2026-09';
 const MONTHS = 24;
+const CUSTOMER_ID = 1; // Centene (see snowflake/04_seed_savings_invoice.sql); written to every CSV row
 
 // Relative claim volume per market: all 50 US states, weighted roughly by population (millions).
 const MARKETS = {
@@ -98,9 +99,9 @@ const json = {
 
 const csvCell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 const csv = [
-  'month,market,program_type,claims_denied,gross_savings,amount',
+  'customer_id,month,market,program_type,claims_denied,gross_savings,amount',
   ...rows.map((r) =>
-    [r.month, r.market, r.programType, r.claimsDenied, r.grossSavings.toFixed(2), r.amount.toFixed(2)]
+    [CUSTOMER_ID, r.month, r.market, r.programType, r.claimsDenied, r.grossSavings.toFixed(2), r.amount.toFixed(2)]
       .map(csvCell)
       .join(','),
   ),
