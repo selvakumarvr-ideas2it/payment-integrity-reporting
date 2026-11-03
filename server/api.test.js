@@ -1,5 +1,5 @@
-// Integration tests against the local Postgres (npm run db:up && npm run db:setup).
-// Skipped when the database is not reachable or not set up.
+// Integration tests against the local Postgres rollback path (createApi defaults to bi_engine.execute_query).
+// Skipped when the database is not reachable or not set up. `npm run api` uses Snowflake instead.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPool } from './db/pool.js';
 import { createApi } from './routes.js';

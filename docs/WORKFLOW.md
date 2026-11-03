@@ -9,15 +9,15 @@ The step numbers below match the numbers in the diagram. An editable vector copy
 ## 1. Summary
 
 ```
-React page ─▶ JSON (dataset id + required fields) ─▶ Query API ─▶ BI_Engine stored procedure (JSON → SQL) ─▶ Postgres ─▶ JSON back
+React page ─▶ JSON (dataset id + required fields) ─▶ Query API ─▶ Snowflake BI_ENGINE.EXECUTE_QUERY (JSON → SQL over PI.CORE) ─▶ JSON back
 ```
 
 | Part | What it does | Where |
 |---|---|---|
 | React app | Sign-in screen, Savings Invoice report, dataset picker, multi-select filters, KPI tiles and month table | `src/` |
-| Function API | Sign-in and sessions, dataset create/read/update/delete, and the Query API that passes the request to the stored procedure | `server/` |
-| BI_Engine stored procedure | `bi_engine.execute_query(user_id, request jsonb)`: checks the JSON request, builds the SQL, runs it and returns JSON | `server/db/sql/02_bi_engine.sql` |
-| Postgres tables | Users, sessions, report catalog, savings facts, datasets | `server/db/sql/01_schema.sql` |
+| Function API | Sign-in and sessions, dataset create/read/update/delete, and the Query API that calls Snowflake `EXECUTE_QUERY` | `server/` |
+| BI Engine | `PI.BI_ENGINE.EXECUTE_QUERY`: checks the JSON request, builds the SQL, runs it on `PI.CORE` and returns JSON | `snowflake/03_execute_query.sql` |
+| Postgres (App DB) | Users, sessions, report catalog, datasets. Not used for the report query when `BI_ENGINE_BACKEND=snowflake` | `server/db/sql/01_schema.sql` |
 
 A **dataset** is a named, saved set of filter values, for example *Arizona-CPI* = Market `AZ` + Program Type `CPI`. Users pick a dataset instead of setting each filter by hand. Each filter can hold several values, for example Market `AZ, NM, TX`.
 
@@ -60,18 +60,18 @@ A **dataset** is a named, saved set of filter values, for example *Arizona-CPI* 
    | Screen state | Request |
    |---|---|
    | No dataset selected | `filters` from the Market / Program Type selections |
-   | Dataset selected, unchanged | `datasetId` only. The stored procedure loads the dataset's filters itself |
+   | Dataset selected, unchanged | `datasetId` (the Function API loads that dataset's filters from Postgres) |
    | Dataset selected, then a filter changed ("Modified") | `filters` only, from the screen |
 
-8. The API calls `SELECT bi_engine.execute_query(user_id, request::jsonb)`. The user ID comes from the session, never from the request body.
-9. Inside the stored procedure:
-   - **Customer scope:** the customer is read from the user's record. Every query is limited to that customer.
-   - **Validation against the catalog:** each measure must exist in `pi.kpi_measure` and each filter or group attribute in `pi.query_attribute`. `months` must be 1–60, and each filter can have at most 200 values. Anything else stops the request with a message that names the field.
-   - **Dataset:** if `datasetId` is present, the dataset must belong to the user, or be public within the same customer. Its filters are loaded and `last_accessed_date_time` is updated.
-   - **SQL building:** table and column names come only from the catalog and are quoted with `%I`. Aggregate expressions come only from `pi.kpi_measure`. Values are never written into the SQL text: `$1` is the customer, `$2` the filter values as JSON, `$3` the first month.
-10. The procedure runs one query for the monthly rows and one for the KPI totals, both against `pi.fact_savings`. It also reads the distinct filter values for the dropdowns.
-11. It returns one JSON object: `{ report, dataset, kpis, rows, filterOptions, appliedFilters }`. Adding `"debug": true` to the request also returns the generated SQL and its parameters.
-12. The API passes the JSON through. The app shows the KPI tiles and the month table, and the caption names the dataset, the filters and the source.
+8. The API reads the signed-in user's `customerId` (and, if `datasetId` is sent, the dataset) from Postgres, then calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake. `customerId` and `lineOfBusinessId` always come from the session / App DB, never from the browser. Set `BI_ENGINE_BACKEND=postgres` to use `bi_engine.execute_query` instead.
+9. Inside `EXECUTE_QUERY`:
+   - **Customer scope:** `F.CUSTOMER_ID = <id>` is added to every query. The id is the signed-in user's customer, never a value from the browser.
+   - **Validation against Snowflake metadata:** each measure must exist in `MEASURE_DETAILS` and each filter or group attribute in `ATTRIBUTE_DETAILS`. `months` must be 1–60, and each filter can have at most 200 values. Anything else comes back as `{ status: "ERROR", code, field }`.
+   - **Dataset:** if `datasetId` is present, the Function API has already checked the dataset and put its filters in the payload. The engine uses `datasetId` only for the cache key and the log.
+   - **SQL building:** table and column names come only from the metadata tables. Values are escaped string literals in the cached SQL.
+10. The Function API calls the procedure twice in parallel: monthly rows (`aggregates: [month]`, plus dropdown values) and KPI totals (no aggregates), both against `PI.CORE.FACT_SAVINGS`.
+11. It maps the two results into `{ report, dataset, kpis, rows, filterOptions, appliedFilters }`. `debug: true` from the browser is dropped so generated SQL is never returned to the client.
+12. The app shows the KPI tiles and the month table, and the caption names the dataset, the filters and the source.
 
 **Filter rules:**
 - Several values in one filter mean OR (AZ or TX).
@@ -124,7 +124,7 @@ Listing, reading and querying already honour public datasets. The UI and API don
 | 409 | Duplicate dataset name for this user | Message under the name box |
 | 500 | Unexpected server error (details are only logged on the server) | *Internal server error* |
 
-Inside the stored procedure, errors are raised with SQLSTATE `22023` (invalid request), `P0002` (not found) or `42501` (not allowed). The API turns these into 400, 404 and 403.
+Snowflake engine errors are data (`INVALID_REQUEST`, `NOT_FOUND`, `FORBIDDEN`, `INTERNAL`), mapped to 400 / 404 / 403 / 500. The Postgres rollback path uses SQLSTATE `22023`, `P0002` and `42501` for the same statuses.
 
 ## 5. Running it locally
 
@@ -132,7 +132,7 @@ Inside the stored procedure, errors are raised with SQLSTATE `22023` (invalid re
 npm install
 npm run db:up       # Postgres 16 in Docker
 npm run db:setup    # schema, stored procedure, catalog, users, synthetic data, example datasets
-npm run api         # Function API on :7071
+npm run api         # Function API on :7071 (Snowflake EXECUTE_QUERY; needs SNOWFLAKE_* in .env.local)
 npm run dev         # React app on :5173 (proxies /api to :7071)
 ```
 
@@ -144,5 +144,5 @@ npm run dev         # React app on :5173 (proxies /api to :7071)
 
 - **Public datasets:** accept `isPublic` on `POST`/`PUT /api/datasets`, which sets `readpolicy_id = 2`, and add a toggle to the save dialog. Decide who may publish.
 - **HPM shell:** the report becomes a remote in PI's repo. Sign-in, header and customer selection come from the shell. The loader calls `executeQuery` from `@avrc/ui`, which uses the same request shape.
-- **Production BI_Engine:** replace `bi_engine.execute_query` with the real BI_Engine stored procedure (Snowflake), keeping the same request and response JSON. Map `pi.dataset` to the full Snowflake `DATASET` table.
-- **More measures or filters:** add rows to `pi.kpi_measure` / `pi.query_attribute` (and the column to the fact table). No stored-procedure change is needed.
+- **Production BI Engine:** map `pi.dataset` to the full Snowflake `DATASET` table; create `PI_BI_API` and stop connecting as `SYSADMIN`.
+- **More measures or filters:** add rows in Snowflake `MEASURE_DETAILS` / `ATTRIBUTE_DETAILS` (and the column on the Gold fact). No procedure change is needed.

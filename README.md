@@ -4,21 +4,20 @@ React app and Node Function API for the Payment Integrity (PI) **Savings Invoice
 
 ```
 React page ──POST /api/query { reportId, datasetId?, measures, aggregates, filters, months }──▶
-Node Function API ──▶ Postgres stored procedure bi_engine.execute_query(user_id, request jsonb)
-                      (JSON → validated, parameterized SQL over pi.fact_savings)
+Node Function API ──▶ Snowflake PI.BI_ENGINE.EXECUTE_QUERY (JSON → SQL over PI.CORE.FACT_SAVINGS)
                ◀── { report, dataset, kpis, filterOptions, appliedFilters, rows } ◀──
 ```
 
 See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the step-by-step workflow and [docs/flow-diagram.png](docs/flow-diagram.png) for the flow diagram.
 
-**Moving the BI Engine to Snowflake:** the target design (database `PI`, schemas `CORE` and `BI_ENGINE`), build steps and scripts are in [docs/BI_ENGINE_SNOWFLAKE.md](docs/BI_ENGINE_SNOWFLAKE.md) and [`snowflake/`](snowflake/). The Postgres engine above remains the working local POC until the Function API is switched over.
+Sign-in, sessions and saved datasets stay in Postgres. The Function API tab calls Snowflake. Set `BI_ENGINE_BACKEND=postgres` to roll back to `bi_engine.execute_query`. Scripts and build steps: [docs/BI_ENGINE_SNOWFLAKE.md](docs/BI_ENGINE_SNOWFLAKE.md) and [`snowflake/`](snowflake/).
 
 - **Pages:** Sign in → Home → Explore → Savings Invoice (same Home / Explore / report pattern as HPM)
 - **Report:** multi-select Market and Program Type filters, saved **datasets**, three KPI tiles, a sortable month table with a totals row, and CSV export
 - **Datasets:** a named set of filter values (e.g. `Arizona-CPI` = Market AZ + Program CPI) saved per user, so users pick one instead of setting each filter
 - **Sign-in:** username/password; datasets belong to the signed-in user
 - **Data sources** (switchable in the report toolbar): **Function API** (default), **JSON file**, **CSV file**, **Upload CSV**. Datasets work with every source; only the API sends them by id.
-- **Stack:** React 19, Material UI 9, React Router 7 (hash routing), Vite 8, Node 24, Postgres 16 (`pg`), Vitest. Requires **Node 24** (`.nvmrc`) and **Docker** for the local database.
+- **Stack:** React 19, Material UI 9, React Router 7 (hash routing), Vite 8, Node 24, Postgres 16 (`pg`), Snowflake (`snowflake-sdk`), Vitest. Requires **Node 24** (`.nvmrc`) and **Docker** for the local App DB.
 
 ## Run it
 
@@ -29,6 +28,7 @@ cp .env.example .env.local   # optional; defaults work locally
 
 npm run db:up                # start Postgres 16 in Docker (localhost:5432, user/password/db: pi)
 npm run db:setup             # (re)create schemas, stored procedure, users, 2,400 fact rows, example datasets
+# Fill SNOWFLAKE_* in .env.local (see below). Warehouse PI_BI_WH and EXECUTE_QUERY must already exist.
 npm run api                  # Function API on http://localhost:7071/api (restarts when server/ changes)
 npm run dev                  # second terminal: React app on http://localhost:5173
 ```
@@ -54,13 +54,21 @@ In dev and preview, Vite proxies `/api` to `http://localhost:7071`, so the brows
 | `VITE_API_BASE_URL` | `/api` | Function API base URL. `/api` uses the Vite proxy; for a deployed build use e.g. `https://<app>.azurewebsites.net/api` |
 | `VITE_API_QUERY_PATH` | `/query` | Query endpoint path |
 | `VITE_API_KEY` | – | Sent as `x-functions-key` when set. Don't put secrets in a public build |
-| `VITE_API_TIMEOUT_MS` | `30000` | Request timeout |
+| `VITE_API_TIMEOUT_MS` | `60000` | Request timeout (60s so a Snowflake warehouse resume can finish) |
 | `VITE_JSON_URL` / `VITE_CSV_URL` | `data/…` | Static data file locations |
 | `VITE_CUSTOMER_NAME` | `Centene` | Fallback customer label (the signed-in user's customer is used when known) |
-| `DATABASE_URL` | `postgres://pi:pi@localhost:5432/pi` | Postgres connection for the API and setup script |
+| `DATABASE_URL` | `postgres://pi:pi@localhost:5432/pi` | Postgres connection for the API and setup script (auth, datasets) |
 | `API_PORT` | `7071` | Function API port |
 | `CORS_ORIGIN` | `*` | Allowed origin for direct (non-proxied) browser calls |
 | `SEED_PASSWORD` | `Password123!` | Password `npm run db:setup` gives the demo users |
+| `BI_ENGINE_BACKEND` | `snowflake` | `snowflake` = Function API tab calls `PI.BI_ENGINE.EXECUTE_QUERY`; `postgres` = local rollback |
+| `LINE_OF_BUSINESS_ID` | `1` | Sent on every Snowflake payload (must match `snowflake/04_seed_savings_invoice.sql`) |
+| `SNOWFLAKE_ACCOUNT` / `SNOWFLAKE_USER` | – | Org-account identifier (`SELECT CURRENT_ORGANIZATION_NAME() \|\| '-' \|\| CURRENT_ACCOUNT_NAME()`) and user. A bare locator such as `HH07160` 404s on login |
+| `SNOWFLAKE_ACCESS_URL` | – | Optional full host, e.g. `https://myorg-myaccount.snowflakecomputing.com` |
+| `SNOWFLAKE_PASSWORD` or `SNOWFLAKE_PRIVATE_KEY_PATH` | – | Password (dev) or key-pair (preferred). Do not commit either |
+| `SNOWFLAKE_WAREHOUSE` | `PI_BI_WH` | Warehouse used for `EXECUTE_QUERY` |
+| `SNOWFLAKE_ROLE` | `SYSADMIN` | Role for the connection. Use `PI_BI_API` once that role exists |
+| `SNOWFLAKE_DATABASE` / `SNOWFLAKE_SCHEMA` | `PI` / `BI_ENGINE` | Procedure location |
 
 `VITE_*` values are read at build time, so rebuild after changing them.
 
@@ -87,11 +95,12 @@ All endpoints except `health` and `auth/login` need `Authorization: Bearer <toke
 | `POST /api/auth/login` | `{ username, password }` → `{ token, expiresAt, user }` (8-hour session) |
 | `POST /api/auth/logout` | End the session |
 | `GET /api/auth/me` | Current user |
-| `POST /api/query` | Run the report through `bi_engine.execute_query` |
+| `POST /api/query` | Run the report through Snowflake `EXECUTE_QUERY` (or Postgres when `BI_ENGINE_BACKEND=postgres`) |
+
 | `GET /api/datasets` | The user's datasets, then public ones |
 | `POST /api/datasets` | `{ name, description?, filters: [{ attributeKey, values }] }` → 201 |
 | `GET` / `PUT` / `DELETE /api/datasets/:id` | Read / change (`name`, `description`, `filters`) / delete; only the owner can change or delete |
-| `GET /api/health` | Database check |
+| `GET /api/health` | Postgres (and Snowflake, when that backend is on) |
 
 **Query request:**
 
@@ -108,10 +117,10 @@ All endpoints except `health` and `auth/login` need `Authorization: Bearer <toke
 ```
 
 - The shape mirrors Core's `executeQuery`, so the report can move onto the HPM BI Engine API later with little change.
-- `datasetId` is optional. The stored procedure loads that dataset's filters itself (after checking the user may see it) and ANDs any request `filters` on top. The app sends the id while a saved dataset is unchanged, and plain filters once the user modifies it.
+- `datasetId` is optional. The Function API loads that dataset's filters from Postgres (after checking the user may see it) and ANDs any request `filters` on top. The app sends the id while a saved dataset is unchanged, and plain filters once the user modifies it.
 - Several `values` in one filter mean OR (AZ or TX); separate filters are ANDed. An empty filter list means all data.
-- The customer always comes from the signed-in user, never from the request.
-- `debug: true` adds the generated SQL and its parameters to the response.
+- `customerId` and `lineOfBusinessId` always come from the signed-in user / App DB, never from the request.
+- `debug: true` from the browser is ignored (it would return generated SQL). The Postgres rollback path still honours it.
 
 **Query response:**
 

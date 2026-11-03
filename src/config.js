@@ -7,7 +7,7 @@ export const config = {
     baseUrl: (env.VITE_API_BASE_URL || '/api').replace(/\/$/, ''),
     queryPath: env.VITE_API_QUERY_PATH || '/query',
     key: env.VITE_API_KEY || '',
-    timeoutMs: Number(env.VITE_API_TIMEOUT_MS || 30000),
+    timeoutMs: Number(env.VITE_API_TIMEOUT_MS || 60000),
   },
   jsonUrl: env.VITE_JSON_URL || 'data/savings-invoice.json',
   csvUrl: env.VITE_CSV_URL || 'data/savings-invoice.csv',

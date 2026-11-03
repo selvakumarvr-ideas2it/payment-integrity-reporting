@@ -1,24 +1,17 @@
-// HTTP-agnostic route table: handle({ method, path, headers, body }) -> { status, body }.
+// HTTP-agnostic route table: handle({ method, path, headers, body, clientIp }) -> { status, body }.
 // server/function-api.mjs hosts it on node:http; an Azure Functions app.http() wrapper can reuse it as is.
 import { authenticate, bearerToken, login, logout } from './auth.js';
 import { createDataset, deleteDataset, getDataset, listDatasets, updateDataset } from './datasets.js';
-import { ApiError, fromPgError, notFound } from './errors.js';
+import { ApiError, notFound } from './errors.js';
+import { createPostgresExecuteQuery } from './query.js';
 
-/** Query API: hands the request JSON to the BI_Engine stored procedure, which validates it and builds the SQL. */
-export async function executeQuery(pool, userId, request) {
-  try {
-    const { rows } = await pool.query('SELECT bi_engine.execute_query($1, $2::jsonb) AS result', [userId, JSON.stringify(request ?? {})]);
-    return rows[0].result;
-  } catch (e) {
-    throw fromPgError(e);
-  }
-}
-
-export function createApi(pool) {
+export function createApi(pool, { executeQuery, ping, backend = 'postgres' } = {}) {
+  const runQuery = executeQuery || createPostgresExecuteQuery(pool);
   const routes = [
     ['GET', /^\/api\/health$/, false, async () => {
       await pool.query('SELECT 1');
-      return { status: 'ok' };
+      if (ping) await ping();
+      return { status: 'ok', biEngine: backend };
     }],
     ['POST', /^\/api\/auth\/login$/, false, ({ body }) => login(pool, body)],
     ['POST', /^\/api\/auth\/logout$/, false, async ({ token }) => {
@@ -26,7 +19,7 @@ export function createApi(pool) {
       return null;
     }],
     ['GET', /^\/api\/auth\/me$/, true, ({ user }) => ({ user })],
-    ['POST', /^\/api\/query$/, true, ({ user, body }) => executeQuery(pool, user.id, body)],
+    ['POST', /^\/api\/query$/, true, ({ user, body, clientIp }) => runQuery(user, body, { clientIp })],
     ['GET', /^\/api\/datasets$/, true, async ({ user }) => ({ datasets: await listDatasets(pool, user) })],
     ['POST', /^\/api\/datasets$/, true, async ({ user, body }) => ({ status: 201, body: await createDataset(pool, user, body) })],
     ['GET', /^\/api\/datasets\/([^/]+)$/, true, ({ user, params }) => getDataset(pool, user, params[0])],
@@ -37,7 +30,7 @@ export function createApi(pool) {
     }],
   ];
 
-  return async function handle({ method, path, headers = {}, body }) {
+  return async function handle({ method, path, headers = {}, body, clientIp }) {
     try {
       const pathMatches = routes.filter(([, re]) => re.test(path));
       if (!pathMatches.length) throw notFound(`No route for ${path}`);
@@ -47,7 +40,7 @@ export function createApi(pool) {
       const [, re, needsAuth, fn] = route;
       const token = bearerToken(headers);
       const user = needsAuth ? await authenticate(pool, token) : null;
-      const result = await fn({ user, token, body: body ?? {}, params: re.exec(path).slice(1) });
+      const result = await fn({ user, token, body: body ?? {}, params: re.exec(path).slice(1), clientIp });
       if (result === null) return { status: 204, body: null };
       if (result && 'status' in result && 'body' in result) return result;
       return { status: 200, body: result };
