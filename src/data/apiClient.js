@@ -38,7 +38,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = config.api
     return await fetch(url, { ...options, signal: options.signal ?? controller.signal });
   } catch (e) {
     if (e.name === 'AbortError') throw new Error(`Request to ${url} timed out after ${timeoutMs} ms`);
-    throw new Error(`Could not reach ${url}. Is the Function API running (npm run api)?`);
+    throw new Error(`Could not reach ${url}. Is the App API (npm run api) running, and is the query API on :7072?`);
   } finally {
     clearTimeout(timer);
   }
@@ -48,15 +48,15 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = config.api
  * Call the Function API. Throws an Error with `status` and, for validation errors, `field`.
  * Pass `auth: false` for calls made before sign-in.
  */
-export async function apiFetch(path, { method = 'GET', body, auth = true } = {}) {
-  if (!config.api.baseUrl) throw new Error('VITE_API_BASE_URL is not set. Add it to .env.local and rebuild.');
+export async function apiFetch(path, { method = 'GET', body, auth = true, baseUrl = config.api.baseUrl, apiKey = config.api.key, timeoutMs = config.api.timeoutMs } = {}) {
+  if (!baseUrl) throw new Error('API base URL is not set. Add VITE_API_BASE_URL to .env.local and rebuild.');
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && token) headers.Authorization = `Bearer ${token}`;
-  if (config.api.key) headers['x-functions-key'] = config.api.key;
+  if (apiKey) headers['x-functions-key'] = apiKey;
 
-  const url = `${config.api.baseUrl}${path}`;
-  const res = await fetchWithTimeout(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const url = `${baseUrl}${path}`;
+  const res = await fetchWithTimeout(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, timeoutMs);
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

@@ -1,6 +1,6 @@
 # Savings Invoice: workflow
 
-How a user's request travels from the report page to the database and back, and how saved datasets fit in. This covers the local proof of concept: React, a Node Function API and Postgres 16.
+How a user's request travels from the report page to the database and back, and how saved datasets fit in. This covers the local proof of concept: React, the App API (Postgres), a separate Snowflake query API, and Postgres 16.
 
 ![Savings Invoice data flow](flow-diagram.png)
 
@@ -9,15 +9,16 @@ The step numbers below match the numbers in the diagram. An editable vector copy
 ## 1. Summary
 
 ```
-React page ─▶ JSON (dataset id + required fields) ─▶ Query API ─▶ Snowflake BI_ENGINE.EXECUTE_QUERY (JSON → SQL over PI.CORE) ─▶ JSON back
+React page ─▶ App DB (datasets, customer) ─▶ JSON payload ─▶ Function API ─▶ Snowflake BI_ENGINE.EXECUTE_QUERY ─▶ JSON back
 ```
 
 | Part | What it does | Where |
 |---|---|---|
 | React app | Sign-in screen, Savings Invoice report, dataset picker, multi-select filters, KPI tiles and month table | `src/` |
-| Function API | Sign-in and sessions, dataset create/read/update/delete, and the Query API that calls Snowflake `EXECUTE_QUERY` | `server/` |
-| BI Engine | `PI.BI_ENGINE.EXECUTE_QUERY`: checks the JSON request, builds the SQL, runs it on `PI.CORE` and returns JSON | `snowflake/03_execute_query.sql` |
-| Postgres (App DB) | Users, sessions, report catalog, datasets. Not used for the report query when `BI_ENGINE_BACKEND=snowflake` | `server/db/sql/01_schema.sql` |
+| App API | Sign-in, sessions, dataset create/read/update/delete | `server/` |
+| Query API | Authenticates to Snowflake and calls `EXECUTE_QUERY`. No Postgres. | Separate Node project (`:7072`) |
+| BI Engine | `PI.BI_ENGINE.EXECUTE_QUERY`: checks the JSON, builds SQL, runs it on `PI.CORE` | `snowflake/03_execute_query.sql` |
+| Postgres (App DB) | Users, sessions, datasets, customer. React reads these, then sends `customerId` on the Function API payload | `server/db/sql/01_schema.sql` |
 
 A **dataset** is a named, saved set of filter values, for example *Arizona-CPI* = Market `AZ` + Program Type `CPI`. Users pick a dataset instead of setting each filter by hand. Each filter can hold several values, for example Market `AZ, NM, TX`.
 
@@ -63,7 +64,7 @@ A **dataset** is a named, saved set of filter values, for example *Arizona-CPI* 
    | Dataset selected, unchanged | `datasetId` (the Function API loads that dataset's filters from Postgres) |
    | Dataset selected, then a filter changed ("Modified") | `filters` only, from the screen |
 
-8. The API reads the signed-in user's `customerId` (and, if `datasetId` is sent, the dataset) from Postgres, then calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake. `customerId` and `lineOfBusinessId` always come from the session / App DB, never from the browser. Set `BI_ENGINE_BACKEND=postgres` to use `bi_engine.execute_query` instead.
+8. The React app sends `customerId` (from the signed-in App DB user), dataset metadata and filters to the query API on `:7072`. That service calls `PI.BI_ENGINE.EXECUTE_QUERY`. It does not read Postgres. In production, APIM should overwrite `customerId` from the identity token.
 9. Inside `EXECUTE_QUERY`:
    - **Customer scope:** `F.CUSTOMER_ID = <id>` is added to every query. The id is the signed-in user's customer, never a value from the browser.
    - **Validation against Snowflake metadata:** each measure must exist in `MEASURE_DETAILS` and each filter or group attribute in `ATTRIBUTE_DETAILS`. `months` must be 1–60, and each filter can have at most 200 values. Anything else comes back as `{ status: "ERROR", code, field }`.
@@ -132,8 +133,9 @@ Snowflake engine errors are data (`INVALID_REQUEST`, `NOT_FOUND`, `FORBIDDEN`, `
 npm install
 npm run db:up       # Postgres 16 in Docker
 npm run db:setup    # schema, stored procedure, catalog, users, synthetic data, example datasets
-npm run api         # Function API on :7071 (Snowflake EXECUTE_QUERY; needs SNOWFLAKE_* in .env.local)
-npm run dev         # React app on :5173 (proxies /api to :7071)
+npm run api            # App API on :7071 (auth + datasets)
+npm run dev         # React app on :5173 (proxies /api/query to :7072, other /api to :7071)
+# Start the query API separately on :7072 before using the Function API tab.
 ```
 
 - **Demo users:** `analyst` has three example datasets (Arizona-CPI, Southwest-EDC, Big Four States). `reviewer` has one (Texas-All). Both use the password `Password123!`, or `SEED_PASSWORD` if set.

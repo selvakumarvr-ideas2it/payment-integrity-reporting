@@ -51,16 +51,25 @@ Aug-2026,NY,Marketplace,200,300.5,100.25`;
 });
 
 describe('API request', () => {
-  it('uses the executeQuery-style measures / filters / aggregates shape', () => {
-    const req = buildApiRequest({ filters: { market: ['NY', 'TX'], programType: [] } });
+  it('uses the executeQuery-style measures / filters / aggregates shape and App-DB customer', () => {
+    const req = buildApiRequest({
+      filters: { market: ['NY', 'TX'], programType: [] },
+      user: { id: 9, customerId: 1, customer: 'Centene' },
+    });
     expect(req.measures).toEqual(['claimsDenied', 'grossSavings', 'amount']);
     expect(req.filters).toEqual([{ attributeKey: 'market', values: ['NY', 'TX'] }]);
     expect(req.aggregates[0].attributeKey).toBe('month');
+    expect(req.customerId).toBe(1);
+    expect(req.lineOfBusinessId).toBe(1);
     expect(req).not.toHaveProperty('datasetId');
   });
 
   it('sends a saved dataset by id', () => {
-    expect(buildApiRequest({ filters: { market: ALL }, datasetId: 7 })).toMatchObject({ datasetId: 7, filters: [] });
+    expect(buildApiRequest({ filters: { market: ALL }, datasetId: 7, user: { customerId: 1 } })).toMatchObject({
+      datasetId: 7,
+      customerId: 1,
+      filters: [],
+    });
   });
 });
 

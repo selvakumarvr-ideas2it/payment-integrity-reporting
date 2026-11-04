@@ -1,9 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The browser calls same-origin /api; the dev and preview servers forward it to the
-// local Function API (npm run api), so no CORS setup is needed locally.
-const apiProxy = { '/api': { target: process.env.API_PROXY_TARGET || 'http://localhost:7071', changeOrigin: true } };
+// The browser calls same-origin /api; the dev and preview servers forward it so
+// no CORS setup is needed locally.
+const appApi = process.env.API_PROXY_TARGET || 'http://localhost:7071';
+const queryApi = process.env.QUERY_API_PROXY_TARGET || 'http://localhost:7072';
+const apiProxy = {
+  '/api/query': { target: queryApi, changeOrigin: true },
+  '/api': { target: appApi, changeOrigin: true },
+};
 
 // base: './' keeps every asset path relative, so the built `dist/` folder
 // can be served from any static host, sub-path or CDN folder.
@@ -13,5 +18,5 @@ export default defineConfig({
   server: { port: 5173, proxy: apiProxy },
   preview: { proxy: apiProxy },
   build: { chunkSizeWarningLimit: 800 },
-  test: { environment: 'node' },
+  test: { environment: 'node', exclude: ['node_modules/**', 'dist/**'] },
 });

@@ -56,7 +56,14 @@ export default function SavingsInvoicePage() {
     let cancelled = false;
     setLoading(true);
     setError('');
-    loadSavingsInvoice({ source, filters, datasetId: queryDatasetId, uploadedRows: uploaded?.rows })
+    loadSavingsInvoice({
+      source,
+      filters,
+      datasetId: queryDatasetId,
+      dataset: queryDatasetId && selected ? { id: selected.id, name: selected.name } : null,
+      user,
+      uploadedRows: uploaded?.rows,
+    })
       .then((d) => !cancelled && setData(d))
       .catch((e) => {
         if (cancelled) return;
@@ -67,7 +74,7 @@ export default function SavingsInvoicePage() {
     return () => {
       cancelled = true;
     };
-  }, [source, filters, queryDatasetId, uploaded, reloadKey]);
+  }, [source, filters, queryDatasetId, selected?.id, selected?.name, user, uploaded, reloadKey]);
 
   const handleSelectDataset = useCallback(
     (id) => {

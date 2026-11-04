@@ -10,11 +10,10 @@ export const SOURCES = {
 };
 
 /**
- * Request sent to the Query API, which passes it to the BI_Engine stored procedure.
- * The measures / filters / aggregates shape mirrors Core's executeQuery contract.
- * With `datasetId` the procedure loads that saved dataset's filters itself.
+ * Request sent to the query API. customerId / lineOfBusinessId / dataset come from the
+ * App DB (signed-in user + saved dataset). That service only calls Snowflake.
  */
-export function buildApiRequest({ filters, datasetId }) {
+export function buildApiRequest({ filters, datasetId, dataset, user }) {
   const apiFilters = [];
   for (const attributeKey of ['market', 'programType']) {
     const values = toList(filters?.[attributeKey]);
@@ -22,7 +21,12 @@ export function buildApiRequest({ filters, datasetId }) {
   }
   return {
     reportId: 'savings-invoice',
+    customerId: user?.customerId,
+    lineOfBusinessId: config.lineOfBusinessId,
+    customer: user?.customer,
+    userId: user?.id,
     ...(datasetId ? { datasetId } : {}),
+    ...(dataset ? { dataset: { id: dataset.id, name: dataset.name } } : {}),
     measures: MEASURES.map((m) => m.key),
     aggregates: [{ attributeKey: 'month', grain: 'month' }],
     filters: apiFilters,
@@ -30,8 +34,14 @@ export function buildApiRequest({ filters, datasetId }) {
   };
 }
 
-async function fromApi({ filters, datasetId }) {
-  const json = await apiFetch(config.api.queryPath, { method: 'POST', body: buildApiRequest({ filters, datasetId }) });
+async function fromApi({ filters, datasetId, dataset, user }) {
+  const json = await apiFetch(config.queryApi.queryPath, {
+    method: 'POST',
+    body: buildApiRequest({ filters, datasetId, dataset, user }),
+    baseUrl: config.queryApi.baseUrl,
+    apiKey: config.queryApi.key,
+    timeoutMs: config.queryApi.timeoutMs,
+  });
   return {
     ...buildReport({
       rawRows: json.rows ?? json.data ?? [],
@@ -71,13 +81,13 @@ async function fromCsvUrl({ filters }) {
 }
 
 /** Load the Savings Invoice report from the chosen source. `datasetId` is used by the API source only. */
-export async function loadSavingsInvoice({ source, filters, datasetId, uploadedRows }) {
+export async function loadSavingsInvoice({ source, filters, datasetId, dataset, user, uploadedRows }) {
   if (uploadedRows) {
     return buildReport({ rawRows: uploadedRows, filters, applyFilters: true, source: 'upload' });
   }
   switch (source) {
     case 'api':
-      return fromApi({ filters, datasetId });
+      return fromApi({ filters, datasetId, dataset, user });
     case 'csv':
       return fromCsvUrl({ filters });
     case 'json':

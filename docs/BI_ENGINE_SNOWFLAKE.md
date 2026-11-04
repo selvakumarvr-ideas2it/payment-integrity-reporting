@@ -4,7 +4,7 @@ How to build the BI Engine in Snowflake (database `PI`, schemas `CORE` and `BI_E
 
 Scripts are in [`snowflake/`](../snowflake/). Tests: `npx vitest run snowflake`.
 
-> **Status.** The scripts and the procedure are written and the procedure logic is unit-tested against a fake Snowflake driver. The Function API calls `PI.BI_ENGINE.EXECUTE_QUERY` when `BI_ENGINE_BACKEND=snowflake` (see section 7). Sign-in and datasets stay in Postgres. Run `snowflake/06_smoke_test.sql` in the account before pointing the API at it.
+> **Status.** The scripts and the procedure are written and unit-tested against a fake driver. The Snowflake query API is a separate Node project (see section 7). Sign-in and datasets stay in the App API (`server/`, Postgres). Run `snowflake/06_smoke_test.sql` before pointing the query API at the account.
 
 ## 1. What the architecture diagram says
 
@@ -26,10 +26,10 @@ flowchart LR
 |---|---|
 | **Gold layer** (`PI.CORE`) | All the reporting data, pre-aggregated and built by dbt. The engine only reads it. |
 | **BI Engine** (`PI.BI_ENGINE`) | Turns the JSON payload into SQL, runs it on `CORE`, returns JSON. Holds the metadata (measures, attributes, relationships), the SQL cache and the logs. |
-| **Function API** | Authenticates the user, reads the customer, line of business and dataset from the App DB, calls the engine with those ids in the payload, shapes the response for the UI. |
+| **Query API** (separate Node project) | Authenticates to Snowflake and calls `EXECUTE_QUERY`. React supplies `customerId` / dataset from the App DB. |
 | **App DB** (Postgres) | Owns `LINEOFBUSINESS`, `CUSTOMER`, `DATASET` and `DATASETSTRUCTURE`, plus users, sessions and the UI-facing metadata (measure and dataset lists). Fed in part by *App Table Sync* from Gold. **These four tables are not created in Snowflake.** |
 
-The Function API calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake over `PI.CORE`. Set `BI_ENGINE_BACKEND=postgres` to use `bi_engine.execute_query` over `pi.fact_savings` instead.
+The query API calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake over `PI.CORE`. The App API (`server/`) keeps a Postgres `bi_engine.execute_query` rollback for tests.
 
 ## 2. What is in the repo
 
@@ -107,7 +107,7 @@ Run in Snowsight or SnowSQL, in order. Scripts 00 and 01 need elevated roles; th
 | 6 | Run `05_grants.sql`. | As `PI_BI_API`, `CALL` works and `SELECT * FROM PI.CORE.FACT_SAVINGS` is denied. |
 | 7 | Run `06_smoke_test.sql` one statement at a time. | Each statement lists its expected result. |
 | 8 | Create the Function API user with a key pair (template at the end of `00_setup.sql`). | Node can connect (step 9). |
-| 9 | Set `SNOWFLAKE_*` in `.env.local` and run `npm run api`. | Function API tab on Savings Invoice returns 24 months from Snowflake. |
+| 9 | Set `SNOWFLAKE_*` in the query API project and start it (`npm start` on `:7072`). | Function API tab on Savings Invoice returns 24 months from Snowflake. |
 | 10 | Production hardening: resource monitor on `PI_BI_WH`, network policy on the service user, `QUERY_TAG` per call, alert on rows in `EXECUTE_QUERY_ERROR_LOG`. | |
 
 **When metadata changes** (a measure or attribute row is added or edited), run `TRUNCATE TABLE PI.BI_ENGINE.EXECUTE_QUERY_CACHE`. The cache holds generated SQL, not results, so data loads never make it stale.
@@ -231,30 +231,13 @@ Not used in this version: `CROSSFACT_JOIN_KEY_POLICY`, `CROSSFACTFILTER/GROUP`, 
 - **Errors.** The caller never sees a Snowflake error message; details go to `EXECUTE_QUERY_ERROR_LOG`.
 - `debug: true` returns SQL and table names. Only the Function API should set it, never pass it through from the browser.
 
-## 7. Function API (applied)
+## 7. Query API (separate project)
 
-`POST /api/query` calls Snowflake when `BI_ENGINE_BACKEND=snowflake` (the Function API process default). Auth, sessions and datasets stay in Postgres. Set `BI_ENGINE_BACKEND=postgres` to use `bi_engine.execute_query` again.
+A separate Node service (Azure-ready) that only authenticates to Snowflake and calls `EXECUTE_QUERY`. It is not part of this reporting repo. React loads datasets and the signed-in customer from the App API (Postgres), builds the payload, and POSTs `/api/query` there.
 
-| File | Role |
-|---|---|
-| `package.json` | `snowflake-sdk` |
-| `server/db/snowflake.js` | Connection pool (password or key-pair) and `callExecuteQuery(payload, { userId, clientIp })` |
-| `server/query.js` | Builds the payload, calls the engine twice (grid + KPI totals), maps the result to `{ report, dataset, kpis, filterOptions, appliedFilters, rows }` |
-| `server/routes.js` | `/api/query` uses the injected `executeQuery`. Tests keep the Postgres path |
-| `server/function-api.mjs` | Wires Snowflake when `BI_ENGINE_BACKEND=snowflake` and pings it on start |
-| `.env.example` | `BI_ENGINE_BACKEND`, `LINE_OF_BUSINESS_ID`, `SNOWFLAKE_*` |
+`customerId` on the payload comes from the signed-in App DB user. `debug` from the browser is dropped. In production, APIM / One Healthcare ID should overwrite `customerId` and `lineOfBusinessId` from the token.
 
-**What `executeQuery` does**
-
-1. Read from the App DB: the report title, and, when `datasetId` is sent, the dataset (`getDataset`, which already checks ownership, public access and status). Put the dataset's filters in front of the request's filters (both are ANDed). Unknown or not-visible dataset: return 404 here; the engine does not check.
-2. Call the engine twice in parallel: the grid (`aggregates: [month]`, plus `attributeValues: ['market', 'programType']`) and the KPI totals (same measures, no `aggregates`).
-3. Map the result to the existing response `{ report, dataset, kpis, filterOptions, appliedFilters, rows }`. `kpis[].format` is `currency` when `FORMATSTRING` contains `$`, otherwise `number`; `report.from` / `to` are the smallest and largest month in `rows`; `report.title` and `customer` come from the App DB.
-4. Map `code` to HTTP: `INVALID_REQUEST` 400, `NOT_FOUND` 404, `FORBIDDEN` 403, anything else 500 with the generic message.
-5. Always set `customerId` from the signed-in user and `lineOfBusinessId` from `LINE_OF_BUSINESS_ID` (default `1`, matching `04_seed_savings_invoice.sql`). Drop any `debug`, `customerId` or `lineOfBusinessId` the browser sends.
-
-The React app is unchanged: it still sends `reportId, datasetId, measures, aggregates, filters, months`. Saving a dataset still checks filter values against Postgres `pi.fact_savings`, so `npm run db:setup` is still required.
-
-**Rollback.** `BI_ENGINE_BACKEND=postgres`.
+This reporting app only needs the query URL (`VITE_QUERY_API_BASE_URL`, default `/api` proxied to `:7072`). Start the query service independently.
 
 ## 8. Open points
 
