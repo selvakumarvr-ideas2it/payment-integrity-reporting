@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Box,
+  Link,
   Paper,
   Skeleton,
   Table,
@@ -16,7 +17,7 @@ import {
 import { brand } from '../theme.js';
 import { formatValue } from '../format.js';
 
-export default function SavingsTable({ columns, rows, loading, title }) {
+export default function SavingsTable({ columns, rows, loading, title, onMonthClick }) {
   const [orderBy, setOrderBy] = useState('month');
   const [order, setOrder] = useState('desc');
 
@@ -95,7 +96,19 @@ export default function SavingsTable({ columns, rows, loading, title }) {
                           ...(c.format === 'month' && { color: brand.link, fontWeight: 700 }),
                         }}
                       >
-                        {formatValue(r[c.field], c.format)}
+                        {c.format === 'month' && onMonthClick ? (
+  <Link
+    component="button"
+    type="button"
+    underline="hover"
+    onClick={() => onMonthClick(r.month)}
+    sx={{ color: 'inherit', fontWeight: 'inherit', fontSize: 'inherit', cursor: 'pointer' }}
+  >
+    {formatValue(r[c.field], c.format)}
+  </Link>
+) : (
+  formatValue(r[c.field], c.format)
+)}
                       </TableCell>
                     ))}
                   </TableRow>

@@ -4,6 +4,7 @@ import AppHeader from './components/AppHeader.jsx';
 import HomePage from './pages/HomePage.jsx';
 import ExplorePage from './pages/ExplorePage.jsx';
 import SavingsInvoicePage from './pages/SavingsInvoicePage.jsx';
+import SavingsInvoiceDetailsPage from './pages/SavingsInvoiceDetailsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { brand } from './theme.js';
@@ -34,12 +35,13 @@ function Shell() {
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppHeader userName={user.displayName} subtitle={`${user.username} · ${user.customer}`} onLogout={logout} />
       <Box component="main" sx={{ flexGrow: 1 }}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/explore/savings-invoice" element={<SavingsInvoicePage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+      <Routes>
+  <Route path="/" element={<HomePage />} />
+  <Route path="/explore" element={<ExplorePage />} />
+  <Route path="/explore/savings-invoice" element={<SavingsInvoicePage />} />
+  <Route path="/explore/savings-invoice/details/:month" element={<SavingsInvoiceDetailsPage />} />
+  <Route path="*" element={<Navigate to="/" replace />} />
+</Routes>
       </Box>
       <Box component="footer" sx={{ borderTop: `1px solid ${brand.border}`, bgcolor: brand.headerBg }}>
         <Container maxWidth="xl" sx={{ py: 2 }}>
