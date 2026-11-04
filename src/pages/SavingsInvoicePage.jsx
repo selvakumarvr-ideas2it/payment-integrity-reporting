@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import Papa from 'papaparse';
 import { Alert, Box, Breadcrumbs, Container, Divider, Link, Snackbar, Stack, Typography } from '@mui/material';
 import BrandLogo from '../components/BrandLogo.jsx';
@@ -20,6 +20,7 @@ const NO_FILTERS = { market: [], programType: [] };
 
 export default function SavingsInvoicePage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [source, setSource] = useState(config.defaultSource);
   const [filters, setFilters] = useState(NO_FILTERS);
   const [uploaded, setUploaded] = useState(null); // { name, rows }
@@ -144,6 +145,12 @@ export default function SavingsInvoicePage() {
     a.click();
     URL.revokeObjectURL(url);
   }, [data.rows]);
+ const handleMonthClick = useCallback(
+  (month) => {
+    navigate(`/explore/savings-invoice/details/${encodeURIComponent(month)}`, { state: { filters, source } });
+  },
+  [navigate, filters, source],
+);
 
   const months = data.rows.length;
   const sourceLabel = uploaded ? `uploaded file ${uploaded.name}` : { api: 'Function API', json: 'JSON file', csv: 'CSV file' }[source];
@@ -209,7 +216,7 @@ export default function SavingsInvoicePage() {
 
           <Stack spacing={4} sx={{ mt: 4 }}>
             <KpiCards kpis={data.kpis} loading={loading} title={`${months || 24} Months Savings Invoice - Summary`} />
-            <SavingsTable columns={data.columns} rows={data.rows} loading={loading} title={`${months || 24} Months Savings Invoice - Summary by Month`} />
+            <SavingsTable columns={data.columns} rows={data.rows} loading={loading} onMonthClick={handleMonthClick} title={`${months || 24} Months Savings Invoice - Summary by Month`} />
           </Stack>
 
           {!loading && !error && (

@@ -23,7 +23,7 @@ import { SOURCES } from '../data/dataService.js';
 const MAX_SHOWN = 4;
 
 /** Multi-select filter; an empty selection means all values. */
-function FilterSelect({ id, label, value, options, onChange, disabled }) {
+export function FilterSelect({ id, label, value, options, onChange, disabled }) {
   return (
     <FormControl size="small" sx={{ minWidth: 200, maxWidth: { sm: 320 } }} disabled={disabled}>
       <InputLabel id={`${id}-label`} shrink>
