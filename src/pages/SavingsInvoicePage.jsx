@@ -37,8 +37,6 @@ export default function SavingsInvoicePage() {
   const selectedFilters = useMemo(() => (selected ? fromFilterList(selected.filters) : null), [selected]);
   const dirty = Boolean(selected && !sameFilters(filters, selectedFilters));
   const hasFilters = Boolean(filters.market.length || filters.programType.length);
-  // An unmodified saved dataset is sent by id, so the stored procedure resolves its filters.
-  const queryDatasetId = selected && !dirty ? selected.id : null;
 
   const refreshDatasets = useCallback(
     () =>
@@ -59,8 +57,6 @@ export default function SavingsInvoicePage() {
     loadSavingsInvoice({
       source,
       filters,
-      datasetId: queryDatasetId,
-      dataset: queryDatasetId && selected ? { id: selected.id, name: selected.name } : null,
       user,
       uploadedRows: uploaded?.rows,
     })
@@ -74,7 +70,7 @@ export default function SavingsInvoicePage() {
     return () => {
       cancelled = true;
     };
-  }, [source, filters, queryDatasetId, selected?.id, selected?.name, user, uploaded, reloadKey]);
+  }, [source, filters, user, uploaded, reloadKey]);
 
   const handleSelectDataset = useCallback(
     (id) => {

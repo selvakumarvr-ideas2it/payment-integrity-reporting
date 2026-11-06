@@ -38,7 +38,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = config.api
     return await fetch(url, { ...options, signal: options.signal ?? controller.signal });
   } catch (e) {
     if (e.name === 'AbortError') throw new Error(`Request to ${url} timed out after ${timeoutMs} ms`);
-    throw new Error(`Could not reach ${url}. Is the App API (npm run api) running, and is the query API on :7072?`);
+    throw new Error(`Could not reach ${url}. Is the App API (npm run api) running, and is the Azure Function App reachable?`);
   } finally {
     clearTimeout(timer);
   }
@@ -49,19 +49,31 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = config.api
  * Pass `auth: false` for calls made before sign-in.
  */
 export async function apiFetch(path, { method = 'GET', body, auth = true, baseUrl = config.api.baseUrl, apiKey = config.api.key, timeoutMs = config.api.timeoutMs } = {}) {
-  if (!baseUrl) throw new Error('API base URL is not set. Add VITE_API_BASE_URL to .env.local and rebuild.');
+  let url = `${baseUrl || ''}${path}`;
+  if (!url) throw new Error('API base URL is not set. Add VITE_API_BASE_URL to .env.local and rebuild.');
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && token) headers.Authorization = `Bearer ${token}`;
-  if (apiKey) headers['x-functions-key'] = apiKey;
-
-  const url = `${baseUrl}${path}`;
+  if (apiKey) {
+    headers['x-functions-key'] = apiKey;
+    baseUrl = config.queryApi.baseUrl;
+    url = `${baseUrl || ''}${path}`;
+  }
   const res = await fetchWithTimeout(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, timeoutMs);
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && auth) unauthorizedListeners.forEach((fn) => fn());
-    throw Object.assign(new Error(data.error || `${res.status} ${res.statusText} from ${url}`), { status: res.status, field: data.field });
+    const hint =
+      res.status === 401 && url.includes('/api/v1/')
+        ? apiKey
+          ? ' Azure Function App rejected the function key. Confirm VITE_QUERY_API_KEY and restart npm run dev.'
+          : ' Function API key is missing. Set VITE_QUERY_API_KEY in .env.local and restart npm run dev.'
+        : '';
+    throw Object.assign(new Error((data.error || `${res.status} ${res.statusText} from ${url}`) + hint), {
+      status: res.status,
+      field: data.field,
+    });
   }
   return data;
 }

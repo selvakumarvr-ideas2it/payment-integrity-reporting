@@ -1,5 +1,5 @@
 // App API Query rollback: Postgres bi_engine.execute_query.
-// The Function API tab uses the separate query service (Snowflake), not this path.
+// The Function API tab calls the Azure Function App financial-impact endpoint, not this path.
 import { fromPgError } from './errors.js';
 
 export function createPostgresExecuteQuery(pool) {

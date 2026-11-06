@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildReport, toMonthKey, toNumber, ALL } from './schema.js';
 import { parseCsvText } from './csv.js';
-import { buildApiRequest } from './dataService.js';
+import { buildApiRequest, financialImpactPath } from './dataService.js';
 import { fromFilterList, sameFilters, toFilterList } from './datasetsApi.js';
 
 describe('parsing helpers', () => {
@@ -51,24 +51,29 @@ Aug-2026,NY,Marketplace,200,300.5,100.25`;
 });
 
 describe('API request', () => {
-  it('uses the executeQuery-style measures / filters / aggregates shape and App-DB customer', () => {
+  it('matches the Azure financial-impact payload', () => {
     const req = buildApiRequest({
       filters: { market: ['NY', 'TX'], programType: [] },
       user: { id: 9, customerId: 1, customer: 'Centene' },
     });
-    expect(req.measures).toEqual(['claimsDenied', 'grossSavings', 'amount']);
-    expect(req.filters).toEqual([{ attributeKey: 'market', values: ['NY', 'TX'] }]);
-    expect(req.aggregates[0].attributeKey).toBe('month');
-    expect(req.customerId).toBe(1);
-    expect(req.lineOfBusinessId).toBe(1);
+    expect(req).toEqual({
+      lineOfBusinessId: 1,
+      userId: 9,
+      measures: ['claimsDenied', 'grossSavings', 'amount'],
+      aggregates: [{ attributeKey: 'month' }],
+      filters: [{ attributeKey: 'market', values: ['NY', 'TX'] }],
+      months: 24,
+    });
+    expect(req).not.toHaveProperty('customerId');
     expect(req).not.toHaveProperty('datasetId');
   });
 
-  it('sends a saved dataset by id', () => {
-    expect(buildApiRequest({ filters: { market: ALL }, datasetId: 7, user: { customerId: 1 } })).toMatchObject({
-      datasetId: 7,
-      customerId: 1,
-      filters: [],
+  it('puts the client id on the financial-impact path and always sends page filters', () => {
+    expect(financialImpactPath(1)).toBe('/api/v1/clients/1/financial-impact');
+    expect(financialImpactPath(42)).toBe('/api/v1/clients/42/financial-impact');
+    expect(buildApiRequest({ filters: { market: ['AZ'] }, user: { id: 1, customerId: 1 } })).toMatchObject({
+      userId: 1,
+      filters: [{ attributeKey: 'market', values: ['AZ'] }],
     });
   });
 });
