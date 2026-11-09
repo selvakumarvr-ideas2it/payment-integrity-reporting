@@ -16,32 +16,39 @@ export function financialImpactPath(clientId) {
 /**
  * Request sent to POST /api/v1/clients/{clientId}/financial-impact.
  * Client id is on the URL; filters come from the page (including a selected dataset).
+ * `aggregates` and `extraFilters` let the details page group by market/program type
+ * and restrict to the clicked month without changing the summary payload.
  */
-export function buildApiRequest({ filters, user }) {
+export function buildApiRequest({ filters, user, aggregates, extraFilters = [] }) {
   const apiFilters = [];
   for (const attributeKey of ['market', 'programType']) {
     const values = toList(filters?.[attributeKey]);
     if (values.length) apiFilters.push({ attributeKey, values });
   }
+  for (const f of extraFilters) {
+    const values = toList(f?.values);
+    if (f?.attributeKey && values.length) apiFilters.push({ attributeKey: f.attributeKey, values });
+  }
   return {
     lineOfBusinessId: config.lineOfBusinessId,
     userId: user?.id ?? 1,
     measures: MEASURES.map((m) => m.key),
-    aggregates: [{ attributeKey: 'month' }],
+    aggregates: aggregates ?? [{ attributeKey: 'month' }],
     filters: apiFilters,
     months: 24,
   };
 }
 
-async function fromApi({ filters, user }) {
+/** POST to the Azure Function App using the same URL, key and proxy as the summary page. */
+export async function queryFinancialImpact({ filters, user, aggregates, extraFilters }) {
   const key = config.queryApi.key;
   if (!key) {
     throw new Error('Function API key is not set. Add VITE_QUERY_API_KEY to .env.local and restart npm run dev.');
   }
   const path = financialImpactPath(user?.customerId);
-  const json = await apiFetch(`${path}?code=${encodeURIComponent(key)}`, {
+  return apiFetch(`${path}?code=${encodeURIComponent(key)}`, {
     method: 'POST',
-    body: buildApiRequest({ filters, user }),
+    body: buildApiRequest({ filters, user, aggregates, extraFilters }),
     // Do not send the App API bearer token; Azure Functions treat it as 401.
     auth: false,
     // Dev stays same-origin so Vite can proxy /api/v1 to the Function App origin.
@@ -49,6 +56,10 @@ async function fromApi({ filters, user }) {
     apiKey: key,
     timeoutMs: config.queryApi.timeoutMs,
   });
+}
+
+async function fromApi({ filters, user }) {
+  const json = await queryFinancialImpact({ filters, user });
   return {
     ...buildReport({
       rawRows: json.rows ?? json.data ?? [],

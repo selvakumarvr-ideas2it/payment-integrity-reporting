@@ -145,12 +145,14 @@ export default function SavingsInvoicePage() {
     a.click();
     URL.revokeObjectURL(url);
   }, [data.rows]);
- const handleMonthClick = useCallback(
-  (month) => {
-    navigate(`/explore/savings-invoice/details/${encodeURIComponent(month)}`, { state: { filters, source } });
-  },
-  [navigate, filters, source],
-);
+  const handleMonthClick = useCallback(
+    (month) => {
+      navigate(`/explore/savings-invoice/details/${encodeURIComponent(month)}`, {
+        state: { filters, source, uploadedRows: uploaded?.rows },
+      });
+    },
+    [navigate, filters, source, uploaded],
+  );
 
   const months = data.rows.length;
   const sourceLabel = uploaded ? `uploaded file ${uploaded.name}` : { api: 'Function API', json: 'JSON file', csv: 'CSV file' }[source];

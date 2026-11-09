@@ -76,6 +76,25 @@ describe('API request', () => {
       filters: [{ attributeKey: 'market', values: ['AZ'] }],
     });
   });
+
+  it('adds the clicked month and extra aggregates for the details page', () => {
+    const req = buildApiRequest({
+      filters: { market: ['AZ'], programType: ['CPI'] },
+      user: { id: 9, customerId: 1 },
+      aggregates: [{ attributeKey: 'month' }, { attributeKey: 'market' }, { attributeKey: 'programType' }],
+      extraFilters: [{ attributeKey: 'month', values: ['2026-09'] }],
+    });
+    expect(req.aggregates).toEqual([
+      { attributeKey: 'month' },
+      { attributeKey: 'market' },
+      { attributeKey: 'programType' },
+    ]);
+    expect(req.filters).toEqual([
+      { attributeKey: 'market', values: ['AZ'] },
+      { attributeKey: 'programType', values: ['CPI'] },
+      { attributeKey: 'month', values: ['2026-09'] },
+    ]);
+  });
 });
 
 describe('dataset filters', () => {

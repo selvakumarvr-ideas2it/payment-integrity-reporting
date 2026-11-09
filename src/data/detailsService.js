@@ -1,7 +1,8 @@
 import { config } from '../config.js';
-import { MEASURES, normalizeRow, toList } from './schema.js';
+import { filterRows, normalizeRow } from './schema.js';
 import { parseCsvText } from './csv.js';
-import { apiFetch, fetchWithTimeout } from './apiClient.js';
+import { fetchWithTimeout } from './apiClient.js';
+import { queryFinancialImpact } from './dataService.js';
 
 async function fetchOk(url) {
   const res = await fetchWithTimeout(url);
@@ -44,14 +45,14 @@ function generateClaims(s) {
   const n = s.claimsDenied;
   if (!n) return [];
   const [year, mo] = s.month.split('-');
-  const rand = mulberry32(hash(`${s.month}|${s.market}|${s.programType}`));
+  const rand = mulberry32(hash(`${s.month}|${s.market || ''}|${s.programType || ''}`));
   const weights = Array.from({ length: n }, () => 0.5 + rand());
   const gross = split(Math.round(s.grossSavings * 100), weights);
   const amount = split(Math.round(s.amount * 100), weights);
 
   return Array.from({ length: n }, (_, i) => {
     const day = 1 + Math.floor(rand() * 28);
-    const claimId = `Z${100 + Math.floor(rand() * 200)}${s.market}${pad(Math.floor(rand() * 100000), 5)}`;
+    const claimId = `Z${100 + Math.floor(rand() * 200)}${s.market || 'XX'}${pad(Math.floor(rand() * 100000), 5)}`;
     const svcMonth = 1 + Math.floor(rand() * 12);
     return {
       transactionDate: `${mo}/${pad(day)}/${year}`,
@@ -61,7 +62,7 @@ function generateClaims(s) {
       creditClaimId: rand() < 0.3 ? claimId : 'Null',
       market: s.market,
       productType: s.programType,
-      lob: `${s.market}GPMID`,
+      lob: `${s.market || ''}GPMID`,
       lineServiceToDt: `${svcMonth}/${1 + Math.floor(rand() * 28)}/${year}`,
       originalAnalyticIdentifier: ANALYTICS[Math.floor(rand() * ANALYTICS.length)],
       grossSavings: gross[i] / 100,
@@ -70,34 +71,36 @@ function generateClaims(s) {
   });
 }
 
-/** Claim-level rows for ONE month ('YYYY-MM'), built from the same data page 1 uses. */
-export async function loadSavingsDetails({ month, source, filters }) {
-  if (source === 'api') {
-    const apiFilters = [];
-    for (const attributeKey of ['market', 'programType']) {
-      const values = toList(filters?.[attributeKey]);
-      if (values.length) apiFilters.push({ attributeKey, values });
-    }
+export const DETAILS_AGGREGATES = [
+  { attributeKey: 'month' },
+  { attributeKey: 'market' },
+  { attributeKey: 'programType' },
+];
 
-    const json = await apiFetch(config.api.queryPath, {
-      method: 'POST',
-      body: {
-        reportId: 'savings-invoice',
-        measures: MEASURES.map((m) => m.key),
-        aggregates: [
-          { attributeKey: 'month', grain: 'month' },
-          { attributeKey: 'market' },
-          { attributeKey: 'programType' },
-        ],
-        filters: apiFilters,
-        months: 24,
-      },
-    });
+function summaryForMonth(raw, month, filters, applyFilters) {
+  const normalized = (raw || []).map(normalizeRow).filter(Boolean);
+  const scoped = applyFilters ? filterRows(normalized, filters) : normalized;
+  const forMonth = scoped.filter((r) => r.month === month);
+  const withMarket = forMonth.filter((r) => r.market);
+  return withMarket.length ? withMarket : forMonth;
+}
 
-    const summary = (json.rows ?? json.data ?? [])
-      .map(normalizeRow)
-      .filter((r) => r && r.month === month && r.market);
+/** Claim-level rows for ONE month ('YYYY-MM'), scoped by Market and Program Type. */
+export async function loadSavingsDetails({ month, source = config.defaultSource, filters, user, uploadedRows }) {
+  if (uploadedRows) {
+    const summary = summaryForMonth(uploadedRows, month, filters, true);
     return { month, rows: summary.flatMap(generateClaims) };
+  }
+
+  if (source === 'api') {
+    const json = await queryFinancialImpact({
+      filters,
+      user,
+      aggregates: DETAILS_AGGREGATES,
+      extraFilters: month ? [{ attributeKey: 'month', values: [month] }] : [],
+    });
+    const summary = summaryForMonth(json.rows ?? json.data ?? [], month, filters, false);
+    return { month, rows: summary.flatMap(generateClaims), filterOptions: json.filterOptions };
   }
 
   let raw;
@@ -107,6 +110,6 @@ export async function loadSavingsDetails({ month, source, filters }) {
     const json = await (await fetchOk(config.jsonUrl)).json();
     raw = Array.isArray(json) ? json : json.rows ?? json.data ?? [];
   }
-  const summary = raw.map(normalizeRow).filter((r) => r && r.month === month && r.market);
+  const summary = summaryForMonth(raw, month, filters, true);
   return { month, rows: summary.flatMap(generateClaims) };
 }
