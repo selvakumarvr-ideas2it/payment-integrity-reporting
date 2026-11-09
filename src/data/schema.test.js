@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildReport, toMonthKey, toNumber, ALL } from './schema.js';
 import { parseCsvText } from './csv.js';
-import { buildApiRequest, financialImpactPath } from './dataService.js';
+import { buildApiRequest, financialImpactPath, pickFilterOptions } from './dataService.js';
 import { fromFilterList, sameFilters, toFilterList } from './datasetsApi.js';
 
 describe('parsing helpers', () => {
@@ -63,6 +63,7 @@ describe('API request', () => {
       aggregates: [{ attributeKey: 'month' }],
       filters: [{ attributeKey: 'market', values: ['NY', 'TX'] }],
       months: 24,
+      attributeValues: ['market', 'programType'],
     });
     expect(req).not.toHaveProperty('customerId');
     expect(req).not.toHaveProperty('datasetId');
@@ -94,6 +95,19 @@ describe('API request', () => {
       { attributeKey: 'programType', values: ['CPI'] },
       { attributeKey: 'month', values: ['2026-09'] },
     ]);
+    expect(req.attributeValues).toEqual(['market', 'programType']);
+  });
+
+  it('reads dropdown values from filterOptions or attributeValues', () => {
+    expect(pickFilterOptions({ filterOptions: { market: ['AZ'], programType: ['CPI'] } })).toEqual({
+      market: ['AZ'],
+      programType: ['CPI'],
+    });
+    expect(pickFilterOptions({ attributeValues: { market: ['TX', ' NY '], programType: ['EDC'] } })).toEqual({
+      market: ['TX', 'NY'],
+      programType: ['EDC'],
+    });
+    expect(pickFilterOptions({})).toEqual({ market: [], programType: [] });
   });
 });
 

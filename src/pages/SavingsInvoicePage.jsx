@@ -61,7 +61,19 @@ export default function SavingsInvoicePage() {
       user,
       uploadedRows: uploaded?.rows,
     })
-      .then((d) => !cancelled && setData(d))
+      .then((d) => {
+        if (cancelled) return;
+        // Keep the last full dropdown lists if this response omitted them (month-only rows).
+        setData((prev) => ({
+          ...d,
+          filterOptions: {
+            market: d.filterOptions?.market?.length ? d.filterOptions.market : prev.filterOptions.market,
+            programType: d.filterOptions?.programType?.length
+              ? d.filterOptions.programType
+              : prev.filterOptions.programType,
+          },
+        }));
+      })
       .catch((e) => {
         if (cancelled) return;
         setError(e.message || String(e));

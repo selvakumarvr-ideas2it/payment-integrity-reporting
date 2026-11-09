@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { filterRows, normalizeRow } from './schema.js';
 import { parseCsvText } from './csv.js';
 import { fetchWithTimeout } from './apiClient.js';
-import { queryFinancialImpact } from './dataService.js';
+import { pickFilterOptions, queryFinancialImpact } from './dataService.js';
 
 async function fetchOk(url) {
   const res = await fetchWithTimeout(url);
@@ -100,7 +100,7 @@ export async function loadSavingsDetails({ month, source = config.defaultSource,
       extraFilters: month ? [{ attributeKey: 'month', values: [month] }] : [],
     });
     const summary = summaryForMonth(json.rows ?? json.data ?? [], month, filters, false);
-    return { month, rows: summary.flatMap(generateClaims), filterOptions: json.filterOptions };
+    return { month, rows: summary.flatMap(generateClaims), filterOptions: pickFilterOptions(json) };
   }
 
   let raw;

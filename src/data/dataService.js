@@ -19,9 +19,24 @@ export function financialImpactPath(clientId) {
  * `aggregates` and `extraFilters` let the details page group by market/program type
  * and restrict to the clicked month without changing the summary payload.
  */
+const FILTER_ATTRIBUTES = ['market', 'programType'];
+
+function stringList(v) {
+  return Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [];
+}
+
+/** Dropdown lists from the Function API (`filterOptions`) or Snowflake (`attributeValues`). */
+export function pickFilterOptions(json) {
+  const src = json?.filterOptions ?? json?.attributeValues ?? {};
+  return {
+    market: stringList(src.market),
+    programType: stringList(src.programType),
+  };
+}
+
 export function buildApiRequest({ filters, user, aggregates, extraFilters = [] }) {
   const apiFilters = [];
-  for (const attributeKey of ['market', 'programType']) {
+  for (const attributeKey of FILTER_ATTRIBUTES) {
     const values = toList(filters?.[attributeKey]);
     if (values.length) apiFilters.push({ attributeKey, values });
   }
@@ -36,6 +51,9 @@ export function buildApiRequest({ filters, user, aggregates, extraFilters = [] }
     aggregates: aggregates ?? [{ attributeKey: 'month' }],
     filters: apiFilters,
     months: 24,
+    // Distinct values for the Market / Program Type dropdowns. Rows are grouped by month only,
+    // so these cannot be inferred from the table.
+    attributeValues: FILTER_ATTRIBUTES,
   };
 }
 
@@ -64,7 +82,7 @@ async function fromApi({ filters, user }) {
     ...buildReport({
       rawRows: json.rows ?? json.data ?? [],
       kpis: json.kpis,
-      filterOptions: json.filterOptions,
+      filterOptions: pickFilterOptions(json),
       report: json.report,
       filters,
       applyFilters: false, // the stored procedure applies filters server-side
