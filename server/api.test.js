@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPool } from './db/pool.js';
 import { createApi } from './routes.js';
+import { applyPopularSelection } from '../src/data/datasetPeriods.js';
 
 const PASSWORD = process.env.SEED_PASSWORD || 'Password123!';
 const pool = createPool();
@@ -55,7 +56,13 @@ describe.skipIf(!dbReady)('Function API + BI_Engine stored procedure', () => {
     const byHand = await call(
       'POST',
       '/api/query',
-      { filters: [{ attributeKey: 'market', values: ['AZ'] }, { attributeKey: 'programType', values: ['CPI'] }] },
+      {
+        filters: [
+          { attributeKey: 'market', values: ['AZ'] },
+          { attributeKey: 'programType', values: ['CPI'] },
+          { attributeKey: 'month', operator: 'BETWEEN', values: ['2025-01', '2025-12'] },
+        ],
+      },
       analyst,
     );
     expect(byId.body.dataset).toEqual({ id: az.id, name: 'Arizona-CPI' });
@@ -80,13 +87,21 @@ describe.skipIf(!dbReady)('Function API + BI_Engine stored procedure', () => {
   });
 
   it('creates, updates and deletes a dataset owned by the signed-in user', async () => {
-    const res = await call('POST', '/api/datasets', { name: 'Test Ohio', filters: [{ attributeKey: 'market', values: ['OH', 'PA'] }] }, analyst);
+    const periods = applyPopularSelection('2025-full');
+    const res = await call(
+      'POST',
+      '/api/datasets',
+      { name: 'Test Ohio', filters: [{ attributeKey: 'market', values: ['OH', 'PA'] }], periods },
+      analyst,
+    );
     expect(res.status).toBe(201);
     created.push(res.body.id);
     expect(res.body.filters).toEqual([{ attributeKey: 'market', values: ['OH', 'PA'] }]);
+    expect(res.body.periods.current.service).toEqual({ start: '2025-01-01', end: '2025-12-31' });
 
-    expect((await call('POST', '/api/datasets', { name: 'test ohio', filters: [{ attributeKey: 'market', values: ['OH'] }] }, analyst)).status).toBe(409);
-    expect((await call('POST', '/api/datasets', { name: 'Bad', filters: [{ attributeKey: 'market', values: ['ZZ'] }] }, analyst)).status).toBe(400);
+    expect((await call('POST', '/api/datasets', { name: 'test ohio', filters: [{ attributeKey: 'market', values: ['OH'] }], periods }, analyst)).status).toBe(409);
+    expect((await call('POST', '/api/datasets', { name: 'Bad', filters: [{ attributeKey: 'market', values: ['ZZ'] }], periods }, analyst)).status).toBe(400);
+    expect((await call('POST', '/api/datasets', { name: 'No dates', filters: [{ attributeKey: 'market', values: ['OH'] }] }, analyst)).status).toBe(400);
 
     const upd = await call('PUT', `/api/datasets/${res.body.id}`, { filters: [{ attributeKey: 'programType', values: ['EDC'] }] }, analyst);
     expect(upd.body.filters).toEqual([{ attributeKey: 'programType', values: ['EDC'] }]);

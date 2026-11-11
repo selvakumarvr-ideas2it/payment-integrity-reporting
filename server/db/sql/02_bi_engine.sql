@@ -58,6 +58,8 @@ DECLARE
   v_key           text;
   v_values        jsonb;
   v_idx           integer := 0;
+  v_svc_from      text;
+  v_svc_to        text;
   r               record;
 BEGIN
   IF p_request IS NULL OR jsonb_typeof(p_request) <> 'object' THEN
@@ -130,6 +132,17 @@ BEGIN
     IF NOT FOUND THEN PERFORM bi_engine.fail('P0002', format('Dataset %s not found', v_dataset_id), 'datasetId'); END IF;
     UPDATE pi.dataset SET last_accessed_date_time = now() WHERE dataset_id = v_dataset_id;
 
+    -- Current-period service dates are the dataset's reporting window (HPM Time Periods).
+    SELECT to_char(d.current_service_start_date, 'YYYY-MM'), to_char(d.current_service_end_date, 'YYYY-MM')
+      INTO v_svc_from, v_svc_to
+      FROM pi.dataset d WHERE d.dataset_id = v_dataset_id;
+    IF v_svc_from IS NOT NULL AND v_svc_to IS NOT NULL THEN
+      v_clauses := v_clauses || format(' AND %I >= %L AND %I <= %L', v_report.month_column, v_svc_from, v_report.month_column, v_svc_to);
+      v_applied := v_applied || jsonb_build_object(
+        'attributeKey', 'month', 'operator', 'BETWEEN',
+        'values', jsonb_build_array(v_svc_from, v_svc_to), 'source', 'dataset');
+    END IF;
+
     FOR r IN
       SELECT f.attribute_key, a.column_name, jsonb_agg(f.value ORDER BY f.value) AS vals
         FROM pi.dataset_filter f
@@ -165,9 +178,18 @@ BEGIN
       PERFORM bi_engine.fail('22023', format('At most %s values per filter', c_max_values), format('filters[%s].values', v_idx));
     END IF;
     CONTINUE WHEN jsonb_array_length(v_values) = 0;
-    v_clauses := v_clauses || format(' AND %I = ANY (ARRAY(SELECT jsonb_array_elements_text($2 -> %s)))', r.column_name, jsonb_array_length(v_filter_values));
+    IF upper(coalesce(v_elem->>'operator', 'IN')) = 'BETWEEN' THEN
+      IF jsonb_array_length(v_values) <> 2 THEN
+        PERFORM bi_engine.fail('22023', 'BETWEEN needs exactly two values', format('filters[%s].values', v_idx));
+      END IF;
+      v_clauses := v_clauses || format(
+        ' AND %I BETWEEN (SELECT min(x) FROM jsonb_array_elements_text($2 -> %s) x) AND (SELECT max(x) FROM jsonb_array_elements_text($2 -> %s) x)',
+        r.column_name, jsonb_array_length(v_filter_values), jsonb_array_length(v_filter_values));
+    ELSE
+      v_clauses := v_clauses || format(' AND %I = ANY (ARRAY(SELECT jsonb_array_elements_text($2 -> %s)))', r.column_name, jsonb_array_length(v_filter_values));
+    END IF;
     v_filter_values := v_filter_values || jsonb_build_array(v_values);
-    v_applied := v_applied || jsonb_build_object('attributeKey', v_key, 'values', v_values, 'source', 'request');
+    v_applied := v_applied || jsonb_build_object('attributeKey', v_key, 'operator', coalesce(v_elem->>'operator', 'IN'), 'values', v_values, 'source', 'request');
   END LOOP;
 
   -- month window: the latest <months> months of this customer's data

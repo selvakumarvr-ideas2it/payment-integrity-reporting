@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { createPool, withTransaction } from '../server/db/pool.js';
 import { hashPassword } from '../server/auth.js';
 import { createDataset } from '../server/datasets.js';
+import { applyPopularSelection, applySixMonthRunout } from '../src/data/datasetPeriods.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SQL_DIR = join(root, 'server', 'db', 'sql');
@@ -19,13 +20,39 @@ const USERS = [
   { username: 'analyst', displayName: 'Alex Analyst' },
   { username: 'reviewer', displayName: 'Riley Reviewer' },
 ];
+const FULL_2025 = applyPopularSelection('2025-full');
+const SFY_2025 = applyPopularSelection('2025-2026-sfy');
+const FULL_2025_RUNOUT = { ...FULL_2025, current: applySixMonthRunout(FULL_2025.current) };
+
 const DATASETS = {
   analyst: [
-    { name: 'Arizona-CPI', description: 'Arizona, CPI program', filters: { market: ['AZ'], programType: ['CPI'] } },
-    { name: 'Southwest-EDC', description: 'AZ, NM and TX, EDC program', filters: { market: ['AZ', 'NM', 'TX'], programType: ['EDC'] } },
-    { name: 'Big Four States', description: 'CA, FL, NY and TX, all programs', filters: { market: ['CA', 'FL', 'NY', 'TX'] } },
+    {
+      name: 'Arizona-CPI',
+      description: '2025 Full Year · Arizona, CPI program',
+      periods: FULL_2025,
+      filters: { market: ['AZ'], programType: ['CPI'] },
+    },
+    {
+      name: 'Southwest-EDC',
+      description: '2025 Full Year with 6-month payment runout · AZ, NM and TX, EDC',
+      periods: FULL_2025_RUNOUT,
+      filters: { market: ['AZ', 'NM', 'TX'], programType: ['EDC'] },
+    },
+    {
+      name: 'Big Four States',
+      description: 'Jul 2025–Jun 2026 · CA, FL, NY and TX',
+      periods: SFY_2025,
+      filters: { market: ['CA', 'FL', 'NY', 'TX'] },
+    },
   ],
-  reviewer: [{ name: 'Texas-All', description: 'Texas, all programs', filters: { market: ['TX'] } }],
+  reviewer: [
+    {
+      name: 'Texas-All',
+      description: '2025 Full Year · Texas, all programs',
+      periods: FULL_2025,
+      filters: { market: ['TX'] },
+    },
+  ],
 };
 
 const pool = createPool();
@@ -68,8 +95,8 @@ try {
   const { rows: users } = await pool.query('SELECT user_id AS id, username, customer_id AS "customerId" FROM pi.users');
   for (const u of users)
     for (const d of DATASETS[u.username] || []) {
-      const filters = Object.entries(d.filters).map(([attributeKey, values]) => ({ attributeKey, values }));
-      await createDataset(pool, u, { name: d.name, description: d.description, filters });
+      const filters = Object.entries(d.filters || {}).map(([attributeKey, values]) => ({ attributeKey, values }));
+      await createDataset(pool, u, { name: d.name, description: d.description, filters, periods: d.periods });
       console.log(`dataset ${u.username}/${d.name}`);
     }
 

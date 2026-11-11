@@ -65,23 +65,54 @@ CREATE TABLE pi.fact_savings (
 CREATE INDEX ix_fact_savings_month ON pi.fact_savings (customer_id, month);
 CREATE INDEX ix_fact_savings_filters ON pi.fact_savings (customer_id, market, program_type);
 
--- Simplified DATASET (subset of the Snowflake DATASET table).
--- readpolicy_id: 1 = private (owner only), 2 = public (every user of the customer; not exposed in the UI yet).
+-- DATASET: a reporting configuration whose primary definition is time periods
+-- (current / prior / prior-prior service, payment and enrollment dates), matching
+-- APP.DATASET in Health Plan Manager. Filter values still live in pi.dataset_filter.
+-- readpolicy_id: 1 = private (owner only), 2 = public (every user of the customer).
 -- dataset_status_id: 1 = active.
 CREATE TABLE pi.dataset (
-  dataset_id              integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  customer_id             integer NOT NULL REFERENCES pi.customer,
-  name                    text NOT NULL,
-  description             text,
-  dataset_status_id       integer NOT NULL DEFAULT 1,
-  copied_from_dataset_id  integer REFERENCES pi.dataset ON DELETE SET NULL,
-  owner_user_id           integer NOT NULL REFERENCES pi.users,
-  readpolicy_id           integer NOT NULL DEFAULT 1,
-  created_user_id         integer NOT NULL REFERENCES pi.users,
-  last_modified_user_id   integer NOT NULL REFERENCES pi.users,
-  created_date_time       timestamptz NOT NULL DEFAULT now(),
-  last_modified_date_time timestamptz NOT NULL DEFAULT now(),
-  last_accessed_date_time timestamptz
+  dataset_id                        integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_id                       integer NOT NULL REFERENCES pi.customer,
+  lineofbusiness_id                 integer NOT NULL DEFAULT 1,
+  name                              text NOT NULL,
+  description                       text,
+  dataset_status_id                 integer NOT NULL DEFAULT 1,
+  copied_from_dataset_id            integer REFERENCES pi.dataset ON DELETE SET NULL,
+  is_norm                           boolean NOT NULL DEFAULT false,
+  is_default_template               boolean NOT NULL DEFAULT false,
+  current_period_months             integer,
+  prior_period_months               integer,
+  prior_prior_period_months         integer,
+  current_service_start_date        date NOT NULL,
+  current_service_end_date          date NOT NULL,
+  prior_service_start_date          date,
+  prior_service_end_date            date,
+  prior_prior_service_start_date    date,
+  prior_prior_service_end_date      date,
+  current_payment_start_date        date,
+  current_payment_end_date          date,
+  prior_payment_start_date          date,
+  prior_payment_end_date            date,
+  prior_prior_payment_start_date    date,
+  prior_prior_payment_end_date      date,
+  current_enrollment_start_date     date,
+  current_enrollment_end_date       date,
+  prior_enrollment_start_date       date,
+  prior_enrollment_end_date         date,
+  prior_prior_enrollment_start_date date,
+  prior_prior_enrollment_end_date   date,
+  continuously_enrolled_start_date  date,
+  continuously_enrolled_end_date    date,
+  use_paid_only                     boolean NOT NULL DEFAULT false,
+  include_continuously_enrolled     boolean NOT NULL DEFAULT true,
+  owner_user_id                     integer NOT NULL REFERENCES pi.users,
+  readpolicy_id                     integer NOT NULL DEFAULT 1,
+  created_user_id                   integer NOT NULL REFERENCES pi.users,
+  last_modified_user_id             integer NOT NULL REFERENCES pi.users,
+  created_date_time                 timestamptz NOT NULL DEFAULT now(),
+  last_modified_date_time           timestamptz NOT NULL DEFAULT now(),
+  last_accessed_date_time           timestamptz,
+  CHECK (current_service_start_date <= current_service_end_date)
 );
 CREATE UNIQUE INDEX ux_dataset_owner_name ON pi.dataset (customer_id, owner_user_id, lower(name)) WHERE dataset_status_id = 1;
 

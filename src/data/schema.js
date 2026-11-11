@@ -111,8 +111,14 @@ export function toList(v) {
 export function filterRows(rows, filters = {}) {
   const market = toList(filters.market);
   const programType = toList(filters.programType);
+  const monthFrom = filters.monthFrom || null;
+  const monthTo = filters.monthTo || null;
   return rows.filter(
-    (r) => (!market.length || market.includes(r.market)) && (!programType.length || programType.includes(r.programType)),
+    (r) =>
+      (!market.length || market.includes(r.market)) &&
+      (!programType.length || programType.includes(r.programType)) &&
+      (!monthFrom || r.month >= monthFrom) &&
+      (!monthTo || r.month <= monthTo),
   );
 }
 

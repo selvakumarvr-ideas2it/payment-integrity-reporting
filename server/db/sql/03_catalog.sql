@@ -9,6 +9,6 @@ INSERT INTO pi.kpi_measure (report_id, measure_key, label, format, agg_sql, sort
   ('savings-invoice', 'amount',       'Amount',                'currency', 'sum(amount)',        3);
 
 INSERT INTO pi.query_attribute (report_id, attribute_key, column_name, label, is_filter, is_aggregate) VALUES
-  ('savings-invoice', 'month',       'month',        'Month of Transaction', false, true),
+  ('savings-invoice', 'month',       'month',        'Month of Transaction', true,  true),
   ('savings-invoice', 'market',      'market',       'Market',               true,  true),
   ('savings-invoice', 'programType', 'program_type', 'Program Type',         true,  true);

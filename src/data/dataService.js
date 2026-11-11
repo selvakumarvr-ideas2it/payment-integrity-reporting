@@ -42,7 +42,8 @@ export function buildApiRequest({ filters, user, aggregates, extraFilters = [] }
   }
   for (const f of extraFilters) {
     const values = toList(f?.values);
-    if (f?.attributeKey && values.length) apiFilters.push({ attributeKey: f.attributeKey, values });
+    if (f?.attributeKey && values.length)
+      apiFilters.push({ attributeKey: f.attributeKey, values, ...(f.operator ? { operator: f.operator } : {}) });
   }
   return {
     lineOfBusinessId: config.lineOfBusinessId,
@@ -76,8 +77,8 @@ export async function queryFinancialImpact({ filters, user, aggregates, extraFil
   });
 }
 
-async function fromApi({ filters, user }) {
-  const json = await queryFinancialImpact({ filters, user });
+async function fromApi({ filters, user, extraFilters }) {
+  const json = await queryFinancialImpact({ filters, user, extraFilters });
   return {
     ...buildReport({
       rawRows: json.rows ?? json.data ?? [],
@@ -96,6 +97,15 @@ async function fetchOk(url) {
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} from ${url}`);
   return res;
+}
+
+function withMonthRange(filters, monthRange) {
+  return { ...filters, monthFrom: monthRange?.start, monthTo: monthRange?.end };
+}
+
+function periodExtraFilters(monthRange) {
+  if (!monthRange?.start || !monthRange?.end) return [];
+  return [{ attributeKey: 'month', operator: 'BETWEEN', values: [monthRange.start, monthRange.end] }];
 }
 
 async function fromJson({ filters }) {
@@ -117,18 +127,19 @@ async function fromCsvUrl({ filters }) {
 }
 
 /** Load the Savings Invoice report from the chosen source. */
-export async function loadSavingsInvoice({ source, filters, user, uploadedRows }) {
+export async function loadSavingsInvoice({ source, filters, user, uploadedRows, monthRange }) {
+  const scoped = withMonthRange(filters, monthRange);
   if (uploadedRows) {
-    return buildReport({ rawRows: uploadedRows, filters, applyFilters: true, source: 'upload' });
+    return buildReport({ rawRows: uploadedRows, filters: scoped, applyFilters: true, source: 'upload' });
   }
   switch (source) {
     case 'api':
-      return fromApi({ filters, user });
+      return fromApi({ filters, user, extraFilters: periodExtraFilters(monthRange) });
     case 'csv':
-      return fromCsvUrl({ filters });
+      return fromCsvUrl({ filters: scoped });
     case 'json':
     default:
-      return fromJson({ filters });
+      return fromJson({ filters: scoped });
   }
 }
 

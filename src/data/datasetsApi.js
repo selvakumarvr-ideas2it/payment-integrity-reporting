@@ -15,11 +15,19 @@ export const fromFilterList = (list = []) => {
 export const sameFilters = (a, b) => JSON.stringify(toFilterList(a)) === JSON.stringify(toFilterList(b));
 
 export const listDatasets = () => apiFetch('/datasets').then((r) => r.datasets);
-export const createDataset = ({ name, description, filters }) =>
-  apiFetch('/datasets', { method: 'POST', body: { name, description, filters: toFilterList(filters) } });
-export const updateDataset = (id, { name, description, filters }) =>
+export const createDataset = ({ name, description, filters, periods }) =>
+  apiFetch('/datasets', {
+    method: 'POST',
+    body: { name, description, periods, filters: filters ? toFilterList(filters) : [] },
+  });
+export const updateDataset = (id, { name, description, filters, periods }) =>
   apiFetch(`/datasets/${id}`, {
     method: 'PUT',
-    body: { name, description, ...(filters ? { filters: toFilterList(filters) } : {}) },
+    body: {
+      name,
+      description,
+      ...(periods ? { periods } : {}),
+      ...(filters ? { filters: toFilterList(filters) } : {}),
+    },
   });
 export const deleteDataset = (id) => apiFetch(`/datasets/${id}`, { method: 'DELETE' });

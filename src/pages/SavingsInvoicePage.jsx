@@ -7,9 +7,10 @@ import KpiCards from '../components/KpiCards.jsx';
 import SavingsTable from '../components/SavingsTable.jsx';
 import ReportToolbar from '../components/ReportToolbar.jsx';
 import DatasetBar, { describeFilters } from '../components/DatasetBar.jsx';
-import SaveDatasetDialog from '../components/SaveDatasetDialog.jsx';
+import DatasetWizard from '../components/DatasetWizard.jsx';
 import { loadSavingsInvoice, parseCsvFile } from '../data/dataService.js';
 import { createDataset, deleteDataset, fromFilterList, listDatasets, sameFilters, updateDataset } from '../data/datasetsApi.js';
+import { monthRangeFromPeriods } from '../data/datasetPeriods.js';
 import { COLUMNS, formatMonth } from '../data/schema.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { config } from '../config.js';
@@ -31,13 +32,12 @@ export default function SavingsInvoicePage() {
 
   const [datasets, setDatasets] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [dialog, setDialog] = useState(null); // 'create' | 'rename' | null
+  const [dialog, setDialog] = useState(null); // 'create' | 'edit' | null
   const [toast, setToast] = useState('');
 
   const selected = datasets.find((d) => d.id === selectedId) || null;
   const selectedFilters = useMemo(() => (selected ? fromFilterList(selected.filters) : null), [selected]);
   const dirty = Boolean(selected && !sameFilters(filters, selectedFilters));
-  const hasFilters = Boolean(filters.market.length || filters.programType.length);
 
   const refreshDatasets = useCallback(
     () =>
@@ -60,6 +60,7 @@ export default function SavingsInvoicePage() {
       filters,
       user,
       uploadedRows: uploaded?.rows,
+      monthRange: selected ? monthRangeFromPeriods(selected.periods) : null,
     })
       .then((d) => {
         if (cancelled) return;
@@ -83,7 +84,7 @@ export default function SavingsInvoicePage() {
     return () => {
       cancelled = true;
     };
-  }, [source, filters, user, uploaded, reloadKey]);
+  }, [source, filters, user, uploaded, reloadKey, selected]);
 
   const handleSelectDataset = useCallback(
     (id) => {
@@ -94,21 +95,18 @@ export default function SavingsInvoicePage() {
     [datasets],
   );
 
-  const handleSaveDialog = useCallback(
-    async ({ name, description }) => {
-      if (dialog === 'create') {
-        const created = await createDataset({ name, description, filters });
-        await refreshDatasets();
-        setSelectedId(created.id);
-        setToast(`Saved dataset “${created.name}”`);
-      } else {
-        const renamed = await updateDataset(selected.id, { name, description });
-        await refreshDatasets();
-        setToast(`Renamed to “${renamed.name}”`);
-      }
-      setDialog(null);
+  const handleWizardSubmit = useCallback(
+    async ({ id, name, description, periods, filters: wizardFilters }) => {
+      const saved = id
+        ? await updateDataset(id, { name, description, periods, filters: wizardFilters })
+        : await createDataset({ name, description, periods, filters: wizardFilters });
+      await refreshDatasets();
+      setSelectedId(saved.id);
+      setFilters(wizardFilters);
+      setToast(`${id ? 'Updated' : 'Saved'} dataset “${saved.name}”`);
+      return saved;
     },
-    [dialog, filters, selected, refreshDatasets],
+    [refreshDatasets],
   );
 
   const handleUpdate = useCallback(async () => {
@@ -199,12 +197,11 @@ export default function SavingsInvoicePage() {
             datasets={datasets}
             selected={selected}
             dirty={dirty}
-            hasFilters={hasFilters}
             disabled={loading || Boolean(uploaded)}
             onSelect={handleSelectDataset}
-            onSaveNew={() => setDialog('create')}
-            onUpdate={handleUpdate}
-            onRename={() => setDialog('rename')}
+            onCreate={() => setDialog('create')}
+            onEdit={() => setDialog('edit')}
+            onUpdateFilters={handleUpdate}
             onDelete={handleDelete}
           />
 
@@ -242,12 +239,14 @@ export default function SavingsInvoicePage() {
         </Box>
       </Box>
 
-      <SaveDatasetDialog
+      <DatasetWizard
         open={Boolean(dialog)}
-        mode={dialog === 'rename' ? 'rename' : 'create'}
-        initial={dialog === 'rename' ? selected : null}
-        filterSummary={dialog === 'create' ? describeFilters(filters) : ''}
-        onSubmit={handleSaveDialog}
+        mode={dialog === 'edit' ? 'edit' : 'create'}
+        customerName={user?.customer || config.customerName}
+        initial={dialog === 'edit' ? selected : null}
+        initialFilters={dialog === 'edit' ? fromFilterList(selected?.filters) : filters}
+        filterOptions={data.filterOptions}
+        onSubmit={handleWizardSubmit}
         onClose={() => setDialog(null)}
       />
       <Snackbar open={Boolean(toast)} autoHideDuration={3000} onClose={() => setToast('')} message={toast} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} />
