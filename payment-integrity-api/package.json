@@ -1,0 +1,23 @@
+{
+  "name": "payment-integrity-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env.local app-api.mjs",
+    "dev": "node --env-file-if-exists=.env.local --watch app-api.mjs",
+    "test": "vitest run",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:setup": "node --env-file-if-exists=.env.local scripts/db-setup.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}

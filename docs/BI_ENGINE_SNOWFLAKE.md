@@ -4,7 +4,7 @@ How to build the BI Engine in Snowflake (database `PI`, schemas `CORE` and `BI_E
 
 Scripts are in [`snowflake/`](../snowflake/). Tests: `npx vitest run snowflake`.
 
-> **Status.** The scripts and the procedure are written and unit-tested against a fake driver. The Snowflake query API is a separate Node project (see section 7). Sign-in and datasets stay in the App API (`server/`, Postgres). Run `snowflake/06_smoke_test.sql` before pointing the query API at the account.
+> **Status.** The scripts and the procedure are written and unit-tested against a fake driver. The Snowflake query API is a separate Node project (see section 7). Sign-in and datasets stay in **payment-integrity-api** (Postgres). Run `snowflake/06_smoke_test.sql` before pointing the query API at the account.
 
 ## 1. What the architecture diagram says
 
@@ -29,7 +29,7 @@ flowchart LR
 | **Query API** (separate Node project) | Authenticates to Snowflake and calls `EXECUTE_QUERY`. React supplies `customerId` / dataset from the App DB. |
 | **App DB** (Postgres) | Owns `LINEOFBUSINESS`, `CUSTOMER`, `DATASET` and `DATASETSTRUCTURE`, plus users, sessions and the UI-facing metadata (measure and dataset lists). Fed in part by *App Table Sync* from Gold. **These four tables are not created in Snowflake.** |
 
-The query API calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake over `PI.CORE`. The App API (`server/`) keeps a Postgres `bi_engine.execute_query` rollback for tests.
+The query API calls `PI.BI_ENGINE.EXECUTE_QUERY` in Snowflake over `PI.CORE`. **payment-integrity-api** keeps a Postgres `bi_engine.execute_query` rollback for tests.
 
 ## 2. What is in the repo
 

@@ -1,4 +1,4 @@
-/** HPM dataset time periods: current / prior / prior-prior service, payment and enrollment dates. */
+/** HPM dataset time periods. Keep in sync with payment-integrity-api/datasetPeriods.js */
 
 const emptyRange = () => ({ start: '', end: '' });
 const emptyBucket = () => ({ service: emptyRange(), payment: emptyRange(), enrollment: emptyRange() });

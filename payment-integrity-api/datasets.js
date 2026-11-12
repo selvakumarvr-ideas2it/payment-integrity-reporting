@@ -3,7 +3,7 @@
 import pg from 'pg';
 import { withTransaction } from './db/pool.js';
 import { badRequest, conflict, forbidden, notFound } from './errors.js';
-import { generateDatasetName, periodMonths } from '../src/data/datasetPeriods.js';
+import { generateDatasetName, periodMonths } from './datasetPeriods.js';
 
 export const READ_POLICY = { PRIVATE: 1, PUBLIC: 2 };
 const STATUS_ACTIVE = 1;

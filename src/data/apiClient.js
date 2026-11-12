@@ -38,7 +38,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = config.api
     return await fetch(url, { ...options, signal: options.signal ?? controller.signal });
   } catch (e) {
     if (e.name === 'AbortError') throw new Error(`Request to ${url} timed out after ${timeoutMs} ms`);
-    throw new Error(`Could not reach ${url}. Is the App API (npm run api) running, and is the Azure Function App reachable?`);
+    throw new Error(`Could not reach ${url}. Is the App API (npm start in payment-integrity-api) running, and is the Azure Function App reachable?`);
   } finally {
     clearTimeout(timer);
   }

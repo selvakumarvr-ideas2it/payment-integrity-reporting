@@ -1,18 +1,18 @@
 // Rebuilds the local Postgres database: drops and recreates the pi and bi_engine schemas, applies
-// server/db/sql/*.sql in order, then loads users, the synthetic fact rows and example datasets.
+// db/sql/*.sql in order, then loads users, the synthetic fact rows and example datasets.
 //   npm run db:setup
 // DATABASE_URL defaults to the docker-compose database; SEED_PASSWORD sets the demo users' password.
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { createPool, withTransaction } from '../server/db/pool.js';
-import { hashPassword } from '../server/auth.js';
-import { createDataset } from '../server/datasets.js';
-import { applyPopularSelection, applySixMonthRunout } from '../src/data/datasetPeriods.js';
+import { createPool, withTransaction } from '../db/pool.js';
+import { hashPassword } from '../auth.js';
+import { createDataset } from '../datasets.js';
+import { applyPopularSelection, applySixMonthRunout } from '../datasetPeriods.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SQL_DIR = join(root, 'server', 'db', 'sql');
-const FACTS = join(root, 'public', 'data', 'savings-invoice.json');
+const SQL_DIR = join(root, 'db', 'sql');
+const FACTS = join(root, 'data', 'savings-invoice.json');
 const PASSWORD = process.env.SEED_PASSWORD || 'Password123!';
 
 const CUSTOMER = { id: 1, name: 'Centene' };

@@ -64,7 +64,7 @@ export default function LoginPage() {
               </Button>
               {import.meta.env.DEV && (
                 <Typography variant="caption" color="text.secondary">
-                  Local demo users: <b>analyst</b> or <b>reviewer</b>, password <b>Password123!</b> (set by npm run db:setup).
+                  Local demo users: <b>analyst</b> or <b>reviewer</b>, password <b>Password123!</b> (seeded in payment-integrity-api).
                 </Typography>
               )}
             </Stack>

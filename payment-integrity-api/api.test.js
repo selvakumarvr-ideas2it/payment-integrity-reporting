@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPool } from './db/pool.js';
 import { createApi } from './routes.js';
-import { applyPopularSelection } from '../src/data/datasetPeriods.js';
+import { applyPopularSelection } from './datasetPeriods.js';
 
 const PASSWORD = process.env.SEED_PASSWORD || 'Password123!';
 const pool = createPool();
@@ -11,7 +11,7 @@ const dbReady = await pool
   .query('SELECT count(*)::int AS n FROM pi.fact_savings')
   .then((r) => r.rows[0].n > 0)
   .catch(() => false);
-if (!dbReady) console.warn('Postgres not set up; skipping server tests (npm run db:up && npm run db:setup)');
+if (!dbReady) console.warn('Postgres not set up; skipping API tests (npm run db:up && npm run db:setup)');
 
 const api = createApi(pool);
 const call = (method, path, body, token) =>

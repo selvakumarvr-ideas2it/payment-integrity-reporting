@@ -1,5 +1,5 @@
 // HTTP-agnostic route table: handle({ method, path, headers, body }) -> { status, body }.
-// App API: sign-in and datasets. POST /api/query here is the Postgres rollback used by server/api.test.js.
+// App API: sign-in and datasets. POST /api/query here is the Postgres rollback used by api.test.js.
 import { authenticate, bearerToken, login, logout } from './auth.js';
 import { createDataset, deleteDataset, getDataset, listDatasets, updateDataset } from './datasets.js';
 import { ApiError, notFound } from './errors.js';

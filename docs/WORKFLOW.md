@@ -15,10 +15,10 @@ React page ─▶ App DB (datasets, customer) ─▶ JSON payload ─▶ Functio
 | Part | What it does | Where |
 |---|---|---|
 | React app | Sign-in screen, Savings Invoice report, dataset picker, multi-select filters, KPI tiles and month table | `src/` |
-| App API | Sign-in, sessions, dataset create/read/update/delete | `server/` |
-| Query API | Authenticates to Snowflake and calls `EXECUTE_QUERY`. No Postgres. | Separate Node project (`:7072`) |
+| App API | Sign-in, sessions, dataset create/read/update/delete | Sibling repo `payment-integrity-api` (`:7071`) |
+| Query API | Authenticates to Snowflake and calls `EXECUTE_QUERY`. No Postgres. | Azure Function App |
 | BI Engine | `PI.BI_ENGINE.EXECUTE_QUERY`: checks the JSON, builds SQL, runs it on `PI.CORE` | `snowflake/03_execute_query.sql` |
-| Postgres (App DB) | Users, sessions, datasets, customer. React reads these, then sends `customerId` on the Function API payload | `server/db/sql/01_schema.sql` |
+| Postgres (App DB) | Users, sessions, datasets, customer. React reads these, then sends `customerId` on the Function API payload | `payment-integrity-api/db/sql/01_schema.sql` |
 
 A **dataset** is a named, saved set of filter values, for example *Arizona-CPI* = Market `AZ` + Program Type `CPI`. Users pick a dataset instead of setting each filter by hand. Each filter can hold several values, for example Market `AZ, NM, TX`.
 
@@ -130,17 +130,20 @@ Snowflake engine errors are data (`INVALID_REQUEST`, `NOT_FOUND`, `FORBIDDEN`, `
 ## 5. Running it locally
 
 ```bash
+# payment-integrity-api
 npm install
 npm run db:up       # Postgres 16 in Docker
 npm run db:setup    # schema, stored procedure, catalog, users, synthetic data, example datasets
-npm run api            # App API on :7071 (auth + datasets)
-npm run dev         # React app on :5173 (proxies /api/query to :7072, other /api to :7071)
-# Start the query API separately on :7072 before using the Function API tab.
+npm start           # App API on :7071 (auth + datasets)
+
+# payment-integrity-reporting
+npm install
+npm run dev         # React app on :5173 (proxies /api to :7071, /api/v1 to Azure)
 ```
 
-- **Demo users:** `analyst` has three example datasets (Arizona-CPI, Southwest-EDC, Big Four States). `reviewer` has one (Texas-All). Both use the password `Password123!`, or `SEED_PASSWORD` if set.
-- **Resetting:** `npm run db:setup` rebuilds everything, so it deletes datasets users have saved.
-- **Tests:** `npm test` runs the unit tests and the API / stored-procedure integration tests. The integration tests are skipped when Postgres isn't set up.
+- **Demo users:** `analyst` has three example datasets (Arizona-CPI, Southwest-EDC, Big Four States). `reviewer` has one (Texas-All). Both use the password `Password123!`, or `SEED_PASSWORD` if set in the API project.
+- **Resetting:** `npm run db:setup` in payment-integrity-api rebuilds everything, so it deletes datasets users have saved.
+- **Tests:** `npm test` in this repo runs the React unit tests. API / stored-procedure tests live in payment-integrity-api (`npm test` there; skipped when Postgres isn't set up).
 
 ## 6. Next steps
 

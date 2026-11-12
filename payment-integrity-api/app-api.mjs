@@ -1,5 +1,5 @@
 // App API (Node 24, Postgres): sign-in, sessions and saved datasets.
-//   npm run api        -> http://localhost:7071/api/...
+//   npm start          -> http://localhost:7071/api/...
 // The Function API tab POSTs /api/v1/clients/{id}/financial-impact to the Azure Function App.
 import { createServer } from 'node:http';
 import { createPool } from './db/pool.js';
